@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HyTech Interface</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', 'Roboto', sans-serif;
+            background-color: #0a0a0f;
+            color: #e0e0e0;
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            overflow: hidden;
+            background-image: radial-gradient(circle at center, #1a1a2e 0%, #0a0a0f 70%);
+        }
+        .container {
+            background-color: #1a1a2e;
+            border: 1px solid #0f0f1a;
+            border-radius: 10px;
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.3), 0 0 40px rgba(0, 255, 255, 0.1);
+            padding: 30px;
+            text-align: center;
+            max-width: 600px;
+            width: 90%;
+            position: relative;
+            overflow: hidden;
+        }
+        .container::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: conic-gradient(from 0deg at 50% 50%, #00ffff 0%, #8a2be2 25%, #00ffff 50%, #8a2be2 75%, #00ffff 100%);
+            z-index: -1;
+            animation: rotateBorder 8s linear infinite;
+            opacity: 0.2;
+        }
+        @keyframes rotateBorder {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        h1 {
+            color: #00ffff;
+            text-shadow: 0 0 5px #00ffff, 0 0 10px #00ffff, 0 0 15px #00ffff;
+            margin-bottom: 20px;
+            font-size: 2.5em;
+            letter-spacing: 2px;
+        }
+        p {
+            color: #b0b0d0;
+            line-height: 1.6;
+            margin-bottom: 30px;
+        }
+        .action-button {
+            background-color: #8a2be2;
+            color: #ffffff;
+            border: none;
+            padding: 12px 25px;
+            border-radius: 5px;
+            font-size: 1.1em;
+            cursor: pointer;
+            transition: background-color 0.3s ease, box-shadow 0.3s ease;
+            box-shadow: 0 0 10px rgba(138, 43, 226, 0.5);
+            letter-spacing: 1px;
+        }
+        .action-button:hover {
+            background-color: #9933ff;
+            box-shadow: 0 0 15px rgba(153, 51, 255, 0.7), 0 0 25px rgba(153, 51, 255, 0.4);
+        }
+        #status-display {
+            margin-top: 25px;
+            font-size: 1.2em;
+            color: #00ff00;
+            text-shadow: 0 0 5px #00ff00;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>SYSTEM ONLINE</h1>
+        <p>Initiating advanced data protocols. All sub-systems are nominal. Awaiting command input for next sequence execution.</p>
+        <button class="action-button" id="activateButton">ACTIVATE PROTOCOL</button>
+        <div id="status-display">Status: Standby</div>
+    </div>
+
+    <script>
+        document.getElementById('activateButton').addEventListener('click', function() {
+            const statusDisplay = document.getElementById('status-display');
+            if (statusDisplay.textContent === 'Status: Standby') {
+                statusDisplay.textContent = 'Status: Protocol Activated. Processing...';
+                statusDisplay.style.color = '#ffff00';
+                statusDisplay.style.textShadow = '0 0 5px #ffff00';
+            } else {
+                statusDisplay.textContent = 'Status: Standby';
+                statusDisplay.style.color = '#00ff00';
+                statusDisplay.style.textShadow = '0 0 5px #00ff00';
+            }
+        });
+    </script>
+</body>
+</html>
