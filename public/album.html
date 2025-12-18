@@ -95,7 +95,7 @@ h1 {
 
 <script>
 const API = "https://code-mon.codemon.workers.dev";
-const user = localStorage.getItem("code-mon-username");
+const user = new URLSearchParams(window.location.search).get('user');
 
 if (!user) {
   alert("No username found in localStorage (code-mon-username)");
