@@ -94,62 +94,85 @@ h1 {
 <div id="loading" class="loading">Loading images...</div>
 
 <script>
-const API = "https://code-mon.codemon.workers.dev";
-// Get the full query string from the current page URL
+/* ===============================
+   GET USER FROM URL (EXPLICIT)
+================================ */
 var queryString = window.location.search;
-
-// Create a URLSearchParams object from the query string
 var searchParams = new URLSearchParams(queryString);
-
-// Get the value of the "user" parameter
 var user = searchParams.get("user");
 
-// Check if the parameter exists
 if (user === null || user === "") {
-  console.error("Missing 'user' parameter in URL");
-} else {
-  console.log("User parameter value:", user);
+  alert("Missing ?user=username in URL");
+  throw new Error("User param missing");
 }
 
-/* Fetch list of image files */
+/* ===============================
+   FETCH FILE LIST
+================================ */
 async function fetchImageFiles() {
-  const res = await fetch(`${API}/api/list?user=${user}`);
-  const data = await res.json();
-  if (!data.files) return [];
-  return data.files.filter(f =>
-    f.endsWith(".png") ||
-    f.endsWith(".jpg") ||
-    f.endsWith(".jpeg") ||
-    f.endsWith(".webp") ||
-    f.endsWith(".gif")
+  var response = await fetch(
+    "https://code-mon.codemon.workers.dev/api/list?user=" +
+      encodeURIComponent(user)
   );
+
+  if (!response.ok) {
+    console.error("Failed to fetch file list");
+    return [];
+  }
+
+  var data;
+  try {
+    data = await response.json();
+  } catch (err) {
+    console.error("Invalid JSON");
+    return [];
+  }
+
+  if (!Array.isArray(data.files)) {
+    return [];
+  }
+
+  return data.files.filter(function (file) {
+    return /\.(png|jpg|jpeg|webp|gif)$/i.test(file);
+  });
 }
 
-/* Load image as object URL (works in <img src>) */
-async function loadImageURL(filename) {
-  const res = await fetch(`${API}/api/load?user=${user}&filename=${filename}`);
-  const blob = await res.blob();
-  return URL.createObjectURL(blob);
-}
-
-/* Render gallery */
+/* ===============================
+   RENDER GALLERY
+================================ */
 async function renderGallery() {
-  const gallery = document.getElementById("gallery");
-  const loading = document.getElementById("loading");
+  var gallery = document.getElementById("gallery");
+  var loading = document.getElementById("loading");
+
   loading.style.display = "block";
+  gallery.innerHTML = "";
 
-  const files = await fetchImageFiles();
+  var files = await fetchImageFiles();
 
-  for (const file of files) {
-    const card = document.createElement("div");
+  if (files.length === 0) {
+    loading.textContent = "No images found";
+    return;
+  }
+
+  for (var i = 0; i < files.length; i++) {
+    var file = files[i];
+
+    var card = document.createElement("div");
     card.className = "image-card";
 
-    const img = document.createElement("img");
-    img.src = await loadImageURL(file); // show the image
+    var img = document.createElement("img");
+    img.src = user + "/" + file; // ✅ EXACTLY AS REQUESTED
+    img.alt = file;
 
-    const info = document.createElement("div");
+    var info = document.createElement("div");
     info.className = "image-info";
-    info.innerHTML = `${file}<br><code>&lt;img src="${user}/${file}" /&gt;</code>`; // for implementation snippet
+    info.innerHTML =
+      file +
+      '<br><code>&lt;img src="' +
+      user +
+      "/" +
+      file +
+      '" /&gt;</code>';
 
     card.appendChild(img);
     card.appendChild(info);
