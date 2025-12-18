@@ -95,10 +95,20 @@ h1 {
 
 <script>
 const API = "https://code-mon.codemon.workers.dev";
-const user = new URLSearchParams(window.location.search).get('user');
+// Get the full query string from the current page URL
+var queryString = window.location.search;
 
-if (!user) {
-  alert("No username found in localStorage (code-mon-username)");
+// Create a URLSearchParams object from the query string
+var searchParams = new URLSearchParams(queryString);
+
+// Get the value of the "user" parameter
+var user = searchParams.get("user");
+
+// Check if the parameter exists
+if (user === null || user === "") {
+  console.error("Missing 'user' parameter in URL");
+} else {
+  console.log("User parameter value:", user);
 }
 
 /* Fetch list of image files */
