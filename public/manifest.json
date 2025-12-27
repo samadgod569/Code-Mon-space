@@ -1,6 +1,6 @@
 {
   "name": "My PWA",
-  "short_name": "PWA",
+  "short_name": "Code-Mon",
   "start_url": "/@me?user=C69P2W&filename=styles.css",
   "display": "standalone",
   "background_color": "#ffffff",
