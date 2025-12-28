@@ -38,6 +38,19 @@
     const headContent = headMatch ? headMatch[1] : "";
 
     // -------------------------------
+    // PRESERVE META, TITLE, MANIFEST, ICONS
+    // -------------------------------
+    const tempHead = document.createElement("head");
+    tempHead.innerHTML = headContent;
+    [...tempHead.children].forEach(node => {
+        const tag = node.tagName.toLowerCase();
+        if (tag === "style" || tag === "script") return; // handled separately
+        if (tag === "meta" || tag === "title" || tag === "link") {
+            document.head.appendChild(node.cloneNode(true));
+        }
+    });
+
+    // -------------------------------
     // INLINE <style>
     // -------------------------------
     [...headContent.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/gi)].forEach(m => {
@@ -51,8 +64,6 @@
     // -------------------------------
     for (const m of headContent.matchAll(/<link[^>]+rel=["']stylesheet["'][^>]*href=["']([^"']+)["'][^>]*>/gi)) {
         const href = m[1];
-
-        // Only treat as filename (no http, no //)
         if (!/^(https?:)?\/\//i.test(href)) {
             try {
                 const css = await loadFile(href);
@@ -66,26 +77,30 @@
     }
 
     // -------------------------------
-    // REWRITE fetch("file") CALLS
+    // REWRITE fetch("file") CALLS + serviceWorker.register
     // -------------------------------
     function rewriteFetches(code) {
-        return code.replace(
-            /fetch\(\s*["']([^"']+)["']\s*\)/g,
-            (match, path) => {
-                // If it's a URL or absolute path → leave it
-                if (
-                    path.startsWith("http://") ||
-                    path.startsWith("https://") ||
-                    path.startsWith("//") ||
-                    path.startsWith("/")
-                ) {
-                    return match;
+        return code
+            .replace(
+                /fetch\(\s*["']([^"']+)["']\s*\)/g,
+                (match, path) => {
+                    if (
+                        path.startsWith("http://") ||
+                        path.startsWith("https://") ||
+                        path.startsWith("//") ||
+                        path.startsWith("/")
+                    ) {
+                        return match;
+                    }
+                    return `fetch("${API_BASE}?user=${user}&filename=${path}")`;
                 }
-
-                // Otherwise rewrite
-                return `fetch("${API_BASE}?user=${user}&filename=${path}")`;
-            }
-        );
+            )
+            .replace(
+                /navigator\.serviceWorker\.register\(\s*["']([^"']+)["']\s*\)/g,
+                (match, path) => {
+                    return `navigator.serviceWorker.register("${API_BASE}?user=${user}&filename=${path}")`;
+                }
+            );
     }
 
     // -------------------------------
@@ -103,13 +118,11 @@
     [...headContent.matchAll(/<script[^>]+src=["']([^"']+)["'][^>]*><\/script>/gi)].forEach(m => {
         const src = m[1];
         const script = document.createElement("script");
-
         if (/^(https?:)?\/\//i.test(src)) {
             script.src = src;
         } else {
             script.src = `${API_BASE}?user=${user}&filename=${src}`;
         }
-
         script.defer = true;
         document.head.appendChild(script);
     });
