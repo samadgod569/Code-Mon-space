@@ -2,7 +2,7 @@ const CACHE_NAME = 'app-v1';
 const urlsToCache = [
   './',
   './test.html',
-  './@me'
+  './@me.html'
 ];
 
 // Install
