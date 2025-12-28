@@ -32,7 +32,7 @@ export default {
         }
 
         const apiRes = await fetch(
-          `https://code-mon.workers.dev/api/engine?name=${encodeURIComponent(name)}`,
+          `https://code-mon.workers.dev/api/app?name=${encodeURIComponent(name)}`,
           { method: "GET" }
         );
 
@@ -68,7 +68,7 @@ export default {
         }
 
         const apiRes = await fetch(
-          "https://code-mon.workers.dev/api/engine",
+          "https://code-mon.workers.dev/api/app",
           {
             method: "POST",
             headers: {
