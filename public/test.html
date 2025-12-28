@@ -24,40 +24,26 @@
 
   <script src="script.js"></script>
   <script>
-    // Get app name from query parameter
-    const urlParams = new URLSearchParams(window.location.search);
-    const appName = urlParams.get('name');
+  const urlParams = new URLSearchParams(window.location.search);
+  const appName = urlParams.get('name');
 
-    if (appName) {
-      // Set manifest dynamically
-      const manifestLink = document.getElementById("manifestLink");
-      manifestLink.href = `https://code-mon-space.workers.dev/api/engine?name=${encodeURIComponent(appName)}`;
-    }
+  if (!appName) {
+    document.body.innerHTML = "<h2>No app name provided!</h2>";
+  } else {
+    // Dynamically set manifest
+    const manifestLink = document.createElement("link");
+    manifestLink.rel = "manifest";
+    manifestLink.href = `https://code-mon-space.workers.dev/api/engine?name=${encodeURIComponent(appName)}`;
+    document.head.appendChild(manifestLink);
 
-    // Register service worker
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("sw.js")
-        .then(() => console.log("Service Worker registered"))
-        .catch(err => console.log("SW error:", err));
-    }
+    console.log("Manifest URL set:", manifestLink.href);
 
-    // Handle "Install App" button
-    let deferredPrompt;
-    const installBtn = document.getElementById("installBtn");
-
-    window.addEventListener('beforeinstallprompt', (e) => {
-      e.preventDefault();
-      deferredPrompt = e;
-      installBtn.style.display = 'block';
-    });
-
-    installBtn.addEventListener('click', async () => {
-      installBtn.style.display = 'none';
-      deferredPrompt.prompt();
-      const choice = await deferredPrompt.userChoice;
-      console.log("User choice:", choice.outcome);
-      deferredPrompt = null;
-    });
+    // Optionally fetch manifest to read icons, etc.
+    fetch(manifestLink.href)
+      .then(res => res.json())
+      .then(data => console.log("Manifest loaded:", data))
+      .catch(err => console.log("Manifest fetch error:", err));
+  }
   </script>
 </body>
 </html>
