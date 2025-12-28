@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <title>PWA</title>
-  <link rel="manifest" href="manifest.json">
+  <link id="manifestLink" rel="manifest" href="">
   <link rel="stylesheet" href="style.css">
   <style>
     button#installBtn {
@@ -20,10 +20,20 @@
 </head>
 <body>
   <h1>Hello PWA</h1>
-
   <button id="installBtn">Install App</button>
-<script src="script.js"></script>
+
+  <script src="script.js"></script>
   <script>
+    // Get app name from query parameter
+    const urlParams = new URLSearchParams(window.location.search);
+    const appName = urlParams.get('name');
+
+    if (appName) {
+      // Set manifest dynamically
+      const manifestLink = document.getElementById("manifestLink");
+      manifestLink.href = `https://code-mon-space.workers.dev/api/engine?name=${encodeURIComponent(appName)}`;
+    }
+
     // Register service worker
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("sw.js")
