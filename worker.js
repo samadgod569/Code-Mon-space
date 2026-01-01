@@ -150,9 +150,9 @@ if (req.method === "POST") {
     });
   }
 
-  const { username, pass } = body;
+  const { username, pass, name } = body;
 
-  if (!username || !pass ) {
+  if (!username || !pass || !name) {
     return new Response("Missing fields", {
       status: 400,
       headers: corsHeaders
@@ -169,7 +169,7 @@ if (req.method === "POST") {
   }
 
   // 🔍 Get app
-  const appValue = await env.APP.get(username);
+  const appValue = await env.APP.get(name);
   if (!appValue) {
     return new Response("App Not Found", {
       status: 404,
@@ -211,7 +211,7 @@ if (req.method === "POST") {
   // 🔁 Rebuild KV value
   const updatedValue = `${owner}*${manifest}*${description}*${likes}`;
 
-  await env.APP.put(username, updatedValue);
+  await env.APP.put(name, updatedValue);
 
   return new Response(JSON.stringify({
     success: true,
