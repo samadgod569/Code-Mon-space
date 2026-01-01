@@ -21,7 +21,7 @@ export default {
 
       // ---------- GET ----------
       if (req.method === "GET") {
-        const name = url.searchParams.get("name");
+        const name = url.searchParams.get("username");
 
         if (!name) {
           return new Response("Missing name", {
@@ -30,7 +30,7 @@ export default {
           });
         }
 
-        const manifest = await env.APP.get(name);
+        const manifest = await env.APP.get(username);
 
         if (!manifest) {
           return new Response("Not Found", {
@@ -80,7 +80,7 @@ if (req.method === "POST") {
     });
   }
 
-  const existing = await env.APP.get(name);
+  const existing = await env.APP.get(username);
 
   // 🔹 If key exists → check ownership
   if (existing) {
@@ -113,7 +113,7 @@ if (req.method === "POST") {
   // 🔹 If key does NOT exist → create new
   await env.APP.put(
     username,
-    `${username}*${JSON.stringify(manifest)}*${name}`
+    `${username}*${JSON.stringify(manifest)}*${name}*`
   );
 
   return new Response(JSON.stringify({ success: true, created: true }), {
@@ -152,7 +152,7 @@ if (req.method === "POST") {
 
   const { username, pass } = body;
 
-  if (!username || !pass || !name) {
+  if (!username || !pass ) {
     return new Response("Missing fields", {
       status: 400,
       headers: corsHeaders
