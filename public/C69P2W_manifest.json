@@ -1,9 +1,9 @@
 {
   "name": "CODE-MON",
-  "short_name": "Test",
+  "short_name": "CODE-MON",
   "start_url": "@me?user=C69P2W&filename=styles.css",
   "display": "standalone",
-  "background_color": "#ffffff",
+  "background_color": "#000000",
   "theme_color": "#000000",
   "icons": [
     {
