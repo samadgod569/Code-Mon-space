@@ -1,7 +1,7 @@
 {
-  "name": "Weather",
-  "short_name": "Weather",
-  "start_url": "styles.css",
+  "name": "Musical instruments",
+  "short_name": "M.I",
+  "start_url": "@me?user=C69P2W&filename=app.html",
   "display": "standalone",
   "background_color": "#000000",
   "theme_color": "#000000",
