@@ -16,115 +16,151 @@
         return await res.text();
     }
 
-    // -------------------------------
-    // LOAD MAIN HTML
-    // -------------------------------
+    // --------------------------------
+    // LOAD HTML
+    // --------------------------------
     let raw = await loadFile(filename);
 
-    // Fix img paths
-    raw = raw.replace(/(src|href)="img\//g, '$1="./img/');
-
-    // -------------------------------
-    // EXTRACT BODY
-    // -------------------------------
+    // --------------------------------
+    // EXTRACT HEAD & BODY
+    // --------------------------------
+    const headMatch = raw.match(/<head[^>]*>([\s\S]*?)<\/head>/i);
     const bodyMatch = raw.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+
+    const headContent = headMatch ? headMatch[1] : "";
     const bodyContent = bodyMatch ? bodyMatch[1] : raw;
+
     document.body.innerHTML = bodyContent;
 
-    // -------------------------------
-    // EXTRACT HEAD
-    // -------------------------------
-    const headMatch = raw.match(/<head[^>]*>([\s\S]*?)<\/head>/i);
-    const headContent = headMatch ? headMatch[1] : "";
-
-    // -------------------------------
-    // PRESERVE META, TITLE, MANIFEST, ICONS
-    // -------------------------------
-    const tempHead = document.createElement("head");
+    // --------------------------------
+    // PRESERVE META / TITLE / ICONS
+    // --------------------------------
+    const tempHead = document.createElement("div");
     tempHead.innerHTML = headContent;
+
     [...tempHead.children].forEach(node => {
         const tag = node.tagName.toLowerCase();
-        if (tag === "style" || tag === "script") return; // handled separately
-        if (tag === "meta" || tag === "title" || tag === "link") {
-            document.head.appendChild(node.cloneNode(true));
-        }
+        if (tag === "script" || tag === "style") return;
+        document.head.appendChild(node.cloneNode(true));
     });
 
-    // -------------------------------
+    // --------------------------------
     // INLINE <style>
-    // -------------------------------
-    [...headContent.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/gi)].forEach(m => {
+    // --------------------------------
+    [...tempHead.querySelectorAll("style")].forEach(s => {
         const style = document.createElement("style");
-        style.textContent = m[1];
+        style.textContent = s.textContent;
         document.head.appendChild(style);
     });
 
-    // -------------------------------
-    // <link rel="stylesheet"> → FETCH VIA API
-    // -------------------------------
-    for (const m of headContent.matchAll(/<link[^>]+rel=["']stylesheet["'][^>]*href=["']([^"']+)["'][^>]*>/gi)) {
-        const href = m[1];
-        if (!/^(https?:)?\/\//i.test(href)) {
+    // --------------------------------
+    // <link rel="stylesheet">
+    // --------------------------------
+    for (const link of tempHead.querySelectorAll('link[rel="stylesheet"]')) {
+        const href = link.getAttribute("href");
+        if (/^(https?:)?\/\//i.test(href)) {
+            document.head.appendChild(link.cloneNode(true));
+        } else {
             try {
                 const css = await loadFile(href);
                 const style = document.createElement("style");
                 style.textContent = css;
                 document.head.appendChild(style);
             } catch (e) {
-                console.error("Failed to load CSS:", href);
+                console.error("CSS load failed:", href);
             }
         }
     }
 
-    // -------------------------------
-    // REWRITE fetch("file") CALLS + serviceWorker.register
-    // -------------------------------
-    function rewriteFetches(code) {
-        return code
-            .replace(
-                /fetch\(\s*["']([^"']+)["']\s*\)/g,
-                (match, path) => {
-                    if (
-                        path.startsWith("http://") ||
-                        path.startsWith("https://") ||
-                        path.startsWith("//") ||
-                        path.startsWith("/")
-                    ) {
-                        return match;
-                    }
-                    return `fetch("${API_BASE}?user=${user}&filename=${path}")`;
-                }
-            )
-            .replace(
-                /navigator\.serviceWorker\.register\(\s*["']([^"']+)["']\s*\)/g,
-                (match, path) => {
-                    return `navigator.serviceWorker.register("${API_BASE}?user=${user}&filename=${path}")`;
-                }
-            );
+    // --------------------------------
+    // WAIT FOR DOM (CRITICAL FIX)
+    // --------------------------------
+    if (document.readyState === "loading") {
+        await new Promise(r => document.addEventListener("DOMContentLoaded", r));
     }
 
-    // -------------------------------
-    // INLINE <script>
-    // -------------------------------
-    [...bodyContent.matchAll(/<script(?![^>]+src)[^>]*>([\s\S]*?)<\/script>/gi)].forEach(m => {
-        const script = document.createElement("script");
-        script.textContent = rewriteFetches(m[1]);
-        document.body.appendChild(script);
-    });
+    // --------------------------------
+    // REWRITE fetch()
+    // --------------------------------
+    function rewriteFetches(code) {
+        return code.replace(
+            /fetch\(\s*["']([^"']+)["']\s*\)/g,
+            (m, p) => {
+                if (/^(https?:)?\/\//i.test(p) || p.startsWith("/")) return m;
+                return `fetch("${API_BASE}?user=${user}&filename=${p}")`;
+            }
+        );
+    }
 
-    // -------------------------------
-    // EXTERNAL <script src> (HEAD ONLY)
-    // -------------------------------
-    [...headContent.matchAll(/<script[^>]+src=["']([^"']+)["'][^>]*><\/script>/gi)].forEach(m => {
-        const src = m[1];
-        const script = document.createElement("script");
-        if (/^(https?:)?\/\//i.test(src)) {
-            script.src = src;
-        } else {
-            script.src = `${API_BASE}?user=${user}&filename=${src}`;
+    // --------------------------------
+    // HANDLE ALL SCRIPTS (HEAD + BODY)
+    // --------------------------------
+    const scriptHolder = document.createElement("div");
+    scriptHolder.innerHTML = headContent + bodyContent;
+
+    const scripts = [...scriptHolder.querySelectorAll("script")];
+
+    for (const old of scripts) {
+        const src = old.getAttribute("src");
+        const type = old.getAttribute("type") || "text/javascript";
+        const inline = old.textContent || "";
+
+        // ----------------------------
+        // INLINE SCRIPT
+        // ----------------------------
+        if (!src) {
+            const s = document.createElement("script");
+            if (type === "module") {
+                s.type = "module";
+                s.textContent = rewriteFetches(inline);
+            } else {
+                s.textContent = rewriteFetches(inline);
+            }
+            document.body.appendChild(s);
+            continue;
         }
-        script.defer = true;
-        document.head.appendChild(script);
-    });
+
+        // ----------------------------
+        // EXTERNAL HTTP SCRIPT
+        // ----------------------------
+        if (/^(https?:)?\/\//i.test(src)) {
+            const s = document.createElement("script");
+            s.src = src;
+            if (type === "module") s.type = "module";
+            document.body.appendChild(s);
+            continue;
+        }
+
+        // ----------------------------
+        // EXTERNAL LOCAL SCRIPT (FETCH & INJECT)
+        // ----------------------------
+        try {
+            const js = await loadFile(src);
+            const isModule =
+                type === "module" || /\b(import|export)\b/.test(js);
+
+            if (isModule) {
+                // 🔥 MODULE MUST STAY MODULE
+                const blob = new Blob(
+                    [rewriteFetches(js)],
+                    { type: "text/javascript" }
+                );
+                const url = URL.createObjectURL(blob);
+
+                const s = document.createElement("script");
+                s.type = "module";
+                s.src = url;
+                document.body.appendChild(s);
+            } else {
+                // 🔹 CLASSIC JS
+                const s = document.createElement("script");
+                s.textContent = rewriteFetches(js);
+                document.body.appendChild(s);
+            }
+        } catch (e) {
+            console.error("Script load failed:", src, e);
+        }
+    }
 
 })();
+    
