@@ -460,6 +460,37 @@ body {
     transform: none !important;
   }
     }
+    
+
+/* Welcome message fade animation */
+.welcome-message {
+    font-size: 1.5rem;
+    font-weight: 600;
+    background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    opacity: 1;
+    transition: opacity 0.5s ease, transform 0.5s ease;
+    transform: translateY(0);
+}
+
+.welcome-message.fade-out {
+    opacity: 0;
+    transform: translateY(-20px);
+    pointer-events: none;
+}
+
+/* Ensure sidebar stays visible */
+@media (min-width: 769px) {
+    .sidebar {
+        display: block !important;
+        transform: translateX(0) !important;
+    }
+    
+    .menu-btn {
+        display: none !important;
+    }
+}
 </style>
 </head>
 <body>
@@ -563,7 +594,9 @@ body {
     </div>
 
     <script>
-      // Theme Manager
+        
+    // dashboard.js - COMPLETE FIXED VERSION
+// Theme Manager
 class ThemeManager {
     constructor() {
         this.theme = localStorage.getItem('theme') || 'dark';
@@ -628,18 +661,24 @@ class SidebarManager {
         menuBtn.addEventListener('click', () => this.toggleSidebar());
         overlay.addEventListener('click', () => this.closeSidebar());
 
-        // Close sidebar when clicking on a link (mobile)
-        sidebar.querySelectorAll('a').forEach(link => {
-            link.addEventListener('click', () => {
-                if (window.innerWidth <= 768) {
-                    this.closeSidebar();
-                }
-            });
-        });
-
         // Auto-open sidebar on desktop
         this.handleResize();
         window.addEventListener('resize', () => this.handleResize());
+        
+        // Set Web Hosting as active by default
+        this.setDefaultActiveLink();
+    }
+
+    setDefaultActiveLink() {
+        const webHostingLink = document.querySelector('a[href="hosting.html"]');
+        if (webHostingLink) {
+            // Remove active from all links first
+            document.querySelectorAll('.sidebar-links a').forEach(link => {
+                link.classList.remove('active');
+            });
+            // Set Web Hosting as active
+            webHostingLink.classList.add('active');
+        }
     }
 
     toggleSidebar() {
@@ -649,15 +688,6 @@ class SidebarManager {
         this.isOpen = !this.isOpen;
         sidebar.classList.toggle('active', this.isOpen);
         overlay.classList.toggle('active', this.isOpen);
-    }
-
-    openSidebar() {
-        const sidebar = document.getElementById('sidebar');
-        const overlay = document.getElementById('overlay');
-        
-        this.isOpen = true;
-        sidebar.classList.add('active');
-        overlay.classList.add('active');
     }
 
     closeSidebar() {
@@ -670,22 +700,21 @@ class SidebarManager {
     }
 
     handleResize() {
-        const sidebar = document.getElementById('sidebar');
-        const overlay = document.getElementById('overlay');
-        
         if (window.innerWidth > 768) {
+            // On desktop, sidebar is always visible
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('overlay');
             sidebar.classList.add('active');
             overlay.classList.remove('active');
             this.isOpen = true;
         } else {
-            sidebar.classList.remove('active');
-            overlay.classList.remove('active');
-            this.isOpen = false;
+            // On mobile, sidebar starts closed
+            this.closeSidebar();
         }
     }
 }
 
-// AI Chat Manager
+// AI Chat Manager - FIXED VERSION
 class AIChatManager {
     constructor() {
         this.database = "";
@@ -700,6 +729,7 @@ class AIChatManager {
             "https://code-mon.codemon.workers.dev/api/ai-get?username=C69P2W&name=code-mon-9",
             "https://code-mon.codemon.workers.dev/api/ai-get?username=C69P2W&name=code-mon-10"
         ];
+        this.hasTyped = false;
         this.init();
         this.loadDatabase();
     }
@@ -713,12 +743,23 @@ class AIChatManager {
         const username = localStorage.getItem('code-mon-username') || 'guest';
         welcomeMessage.textContent = `Hello ${username}! What can I help you with today?`;
 
-        // Input event to hide welcome message
+        // Input event to fade welcome message when typing starts
         messageInput.addEventListener('input', (e) => {
-            if (e.target.value.trim()) {
-                welcomeMessage.classList.add('hidden');
-            } else {
-                welcomeMessage.classList.remove('hidden');
+            if (e.target.value.trim() && !this.hasTyped) {
+                this.hasTyped = true;
+                welcomeMessage.classList.add('fade-out');
+                
+                // Remove message after animation completes
+                setTimeout(() => {
+                    welcomeMessage.style.display = 'none';
+                }, 500);
+            }
+            
+            // If user clears input, show welcome message again
+            if (!e.target.value.trim() && this.hasTyped) {
+                this.hasTyped = false;
+                welcomeMessage.style.display = 'block';
+                welcomeMessage.classList.remove('fade-out');
             }
         });
 
@@ -760,6 +801,15 @@ class AIChatManager {
         this.addMessage(text, 'user');
         messageInput.value = '';
 
+        // Hide welcome message if it's still visible
+        const welcomeMessage = document.getElementById('welcomeMessage');
+        if (!welcomeMessage.classList.contains('fade-out')) {
+            welcomeMessage.classList.add('fade-out');
+            setTimeout(() => {
+                welcomeMessage.style.display = 'none';
+            }, 500);
+        }
+
         // Show loading
         this.showLoading(true);
 
@@ -773,7 +823,7 @@ class AIChatManager {
             try {
                 console.log(`Trying endpoint ${i + 2}: ${url}`);
                 const response = await fetch(url, {
-                    signal: AbortSignal.timeout(10000) // 10 second timeout
+                    signal: AbortSignal.timeout(10000)
                 });
 
                 if (!response.ok) {
@@ -793,7 +843,6 @@ class AIChatManager {
 
             } catch (error) {
                 console.warn(`❌ Endpoint ${i + 2} failed:`, error.message);
-                // Continue to next endpoint
             }
         }
 
@@ -852,8 +901,8 @@ class AppManager {
     }
 
     init() {
-        // Add global styles for notifications
-        this.addNotificationStyles();
+        // Add necessary styles
+        this.addGlobalStyles();
         
         // Add keyboard shortcuts
         this.addKeyboardShortcuts();
@@ -861,9 +910,10 @@ class AppManager {
         console.log('Dashboard initialized successfully');
     }
 
-    addNotificationStyles() {
+    addGlobalStyles() {
         const style = document.createElement('style');
         style.textContent = `
+            /* Notification animations */
             @keyframes slideIn {
                 from { transform: translateX(100%); opacity: 0; }
                 to { transform: translateX(0); opacity: 1; }
@@ -871,6 +921,41 @@ class AppManager {
             @keyframes slideOut {
                 from { transform: translateX(0); opacity: 1; }
                 to { transform: translateX(100%); opacity: 0; }
+            }
+            
+            /* Desktop sidebar */
+            @media (min-width: 769px) {
+                .sidebar {
+                    display: block !important;
+                    transform: translateX(0) !important;
+                }
+                .menu-btn {
+                    display: none !important;
+                }
+            }
+            
+            /* Welcome message fade */
+            .welcome-message.fade-out {
+                opacity: 0 !important;
+                transform: translateY(-20px) !important;
+                transition: opacity 0.5s ease, transform 0.5s ease !important;
+            }
+            
+            /* Ensure active link styling */
+            .sidebar-links a.active {
+                background: rgba(0, 170, 255, 0.1) !important;
+                color: var(--accent-blue) !important;
+                border-left-color: var(--accent-blue) !important;
+            }
+            
+            .sidebar-links a.active::after {
+                content: '';
+                position: absolute;
+                right: 1rem;
+                width: 6px;
+                height: 6px;
+                background: var(--accent-blue);
+                border-radius: 50%;
             }
         `;
         document.head.appendChild(style);
@@ -902,35 +987,6 @@ class AppManager {
 document.addEventListener('DOMContentLoaded', () => {
     window.app = new AppManager();
 });
-
-// Add CSS for active link highlighting
-const activeLinkStyle = document.createElement('style');
-activeLinkStyle.textContent = `
-    .sidebar-links a.active {
-        position: relative;
-    }
-    
-    .sidebar-links a.active::after {
-        content: '';
-        position: absolute;
-        right: 1rem;
-        width: 6px;
-        height: 6px;
-        background: var(--accent-blue);
-        border-radius: 50%;
-    }
-    
-    @media (max-width: 768px) {
-        .menu-btn i {
-            transition: transform 0.3s ease;
-        }
-        
-        .sidebar.active ~ .navbar .menu-btn i {
-            transform: rotate(90deg);
-        }
-    }
-`;
-document.head.appendChild(activeLinkStyle);
     </script>
 </body>
   </html>
