@@ -98,7 +98,7 @@ if (req.method === "POST") {
   // Owner matches → update manifest, keep description & likes exactly
   await env.APP.put(
     owner,
-    `${owner}*${JSON.stringify(manifest)}*${description || ""}*${likes}`
+    `${owner}*${JSON.stringify(manifest)}*${name || ""}*${likes}`
   );
 
   return new Response(JSON.stringify({ success: true, updated: true }), {
