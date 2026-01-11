@@ -959,6 +959,13 @@ for i in range(10):
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/ruby/ruby.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/php/php.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/go/go.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/swift/swift.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/rust/rust.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/clike/clike.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/javascript/javascript.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/go/go.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/php/php.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/ruby/ruby.min.js"></script>
     <script>
         // Language detection mapping
         const LANGUAGE_MAP = {
@@ -1051,73 +1058,24 @@ for i in range(10):
         updateLanguageDisplay('python');
 
         // Smart language detection from code content
-        function detectLanguageFromCode(code) {
-            const lowerCode = code.toLowerCase();
-            
-            // Check for explicit language comments
-            const langCommentMatch = lowerCode.match(/(?:#|\/\/|<!--)\s*lang:\s*(\w+)/);
-            if (langCommentMatch && LANGUAGE_MAP[langCommentMatch[1]]) {
-                return langCommentMatch[1];
-            }
-            
-            // Check for shebang
-            if (lowerCode.startsWith('#!')) {
-                if (lowerCode.includes('python')) return 'python';
-                if (lowerCode.includes('node') || lowerCode.includes('js')) return 'javascript';
-                if (lowerCode.includes('bash') || lowerCode.includes('sh')) return 'bash';
-                if (lowerCode.includes('php')) return 'php';
-                if (lowerCode.includes('ruby')) return 'ruby';
-                if (lowerCode.includes('perl')) return 'perl';
-            }
-            
-            // Check for file extension pattern in comments
-            const extMatch = lowerCode.match(/(?:#|\/\/)\s*(?:file|filename):\s*\S+\.(\w+)/);
-            if (extMatch && LANGUAGE_MAP[extMatch[1]]) {
-                return extMatch[1];
-            }
-            
-            // Check for language-specific patterns
-            if (lowerCode.includes('print(') && lowerCode.includes('def ') && !lowerCode.includes('console.')) {
-                return 'python';
-            }
-            
-            if (lowerCode.includes('console.log') || lowerCode.includes('function(') || 
-                (lowerCode.includes('const ') && lowerCode.includes('let ') && lowerCode.includes('var '))) {
-                return 'javascript';
-            }
-            
-            if (lowerCode.includes('#include') && (lowerCode.includes('int main') || lowerCode.includes('cout'))) {
-                return 'cpp';
-            }
-            
-            if (lowerCode.includes('#include') && lowerCode.includes('printf(')) {
-                return 'c';
-            }
-            
-            if (lowerCode.includes('public class') && lowerCode.includes('public static void main')) {
-                return 'java';
-            }
-            
-            if (lowerCode.includes('<?php') || lowerCode.includes('echo ')) {
-                return 'php';
-            }
-            
-            if (lowerCode.includes('def ') && lowerCode.includes('end')) {
-                return 'ruby';
-            }
-            
-            if (lowerCode.includes('package main') && lowerCode.includes('func ')) {
-                return 'go';
-            }
-            
-            if (lowerCode.includes('fn ') && lowerCode.includes('let ')) {
-                return 'rust';
-            }
-            
-            // Default to Python
-            return 'python';
-        }
+        
+function detectLanguageFromCode(code) {
+    const c = code.toLowerCase();
 
+    if (c.includes("import foundation") || c.includes("print(") && c.includes("let ")) return "swift";
+    if (c.includes("fn ") && c.includes("let ")) return "rust";
+    if (c.includes("package main") && c.includes("func ")) return "go";
+    if (c.includes("public class") && c.includes("static void main")) return "java";
+    if (c.includes("#include") && c.includes("cout")) return "cpp";
+    if (c.includes("#include") && c.includes("printf")) return "c";
+    if (c.includes("console.log") || c.includes("function")) return "javascript";
+    if (c.includes("<?php")) return "php";
+    if (c.includes("def ") && c.includes("end")) return "ruby";
+    if (c.includes("print(") && c.includes("def ")) return "python";
+    if (c.includes("fun ") && c.includes(":")) return "kotlin";
+
+    return "python";
+}
         // Update language display
         function updateLanguageDisplay(lang) {
             const langInfo = LANGUAGE_MAP[lang] || LANGUAGE_MAP['python'];
@@ -1141,7 +1099,9 @@ for i in range(10):
                 case 'ruby': mode = 'ruby'; break;
                 case 'php': mode = 'php'; break;
                 case 'go': mode = 'go'; break;
-                case 'rust': mode = 'rust'; break;
+                case 'swift': mode = 'swift'; break;
+case 'rust': mode = 'rust'; break;
+case 'kotlin': mode = 'clike'; break;
                 default: mode = 'python';
             }
             
