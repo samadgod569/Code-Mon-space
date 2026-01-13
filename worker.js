@@ -11,12 +11,42 @@ export default {
         return new Response("<h2>Missing user or filename.</h2>", { status: 400 });
 
       const PREFIX = `${user}/`;
+      const ext = filename.split(".").pop().toLowerCase();
 
       async function loadFile(name) {
         const data = await env.FILES.get(PREFIX + name);
         if (!data) throw new Error("Missing " + name);
         return data;
       }
+
+      // ============================
+      // RAW FILE MODE (NON HTML)
+      // ============================
+      if (ext !== "html" && ext !== "htm") {
+        const data = await env.FILES.get(PREFIX + filename);
+        if (!data) return new Response("Not found", { status: 404 });
+
+        const mime = {
+          js: "text/javascript",
+          css: "text/css",
+          json: "application/json",
+          txt: "text/plain",
+          png: "image/png",
+          jpg: "image/jpeg",
+          jpeg: "image/jpeg",
+          svg: "image/svg+xml",
+          webp: "image/webp",
+          wasm: "application/wasm"
+        }[ext] || "application/octet-stream";
+
+        return new Response(data, {
+          headers: { "Content-Type": mime }
+        });
+      }
+
+      // ============================
+      // HTML LOADER MODE
+      // ============================
 
       let raw = await loadFile(filename);
 
@@ -103,6 +133,7 @@ import(URL.createObjectURL(new Blob([decodeURIComponent(escape(atob("${encoded}"
         } catch {}
       }
 
+      // ---------- FINAL HTML ----------
       const finalHTML = `
 <!DOCTYPE html>
 <html>
