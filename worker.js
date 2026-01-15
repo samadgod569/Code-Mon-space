@@ -136,14 +136,16 @@ import(URL.createObjectURL(new Blob([decodeURIComponent(escape(atob("${encoded}"
       }
 
       // ---------- FINAL HTML ----------
-      const finalHTML = `
+      const cleanBody = bodyContent.replace(/<script[\s\S]*?<\/script>/gi, "");
+
+const finalHTML = `
 <!DOCTYPE html>
 <html>
 <head>
 ${finalHead}
 </head>
 <body>
-${bodyContent}
+${cleanBody}
 ${finalScripts}
 </body>
 </html>`;
