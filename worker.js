@@ -1,7 +1,5 @@
 export default {
   async fetch(req, env, ctx) {
-    const cache = caches.default;
-
     try {
       const url = new URL(req.url);
       const parts = url.pathname.split("/").filter(Boolean);
@@ -23,7 +21,6 @@ export default {
 
       // ---------------- RAW FILES (JS/CSS/Assets) ----------------
       if (!["html","htm"].includes(ext)) {
-        // cache engine scripts aggressively
         let data = await loadFile(filename, "arrayBuffer");
         const mime = {
           js:"text/javascript", css:"text/css", json:"application/json",
@@ -31,19 +28,14 @@ export default {
           svg:"image/svg+xml", wasm:"application/wasm"
         }[ext] || "application/octet-stream";
 
-        const res = new Response(data, {
+        return new Response(data, {
           headers: {
-            "Content-Type": mime,
-            "Cache-Control": "public,max-age=31536000,immutable"
+            "Content-Type": mime
           }
         });
-
-        ctx.waitUntil(cache.put(req, res.clone()));
-        return res;
       }
 
       // ---------------- HTML FILES ----------------
-      // Always compile fresh HTML (don’t cache compiled HTML)
       let raw = await loadFile(filename);
 
       const head = raw.match(/<head[^>]*>([\s\S]*?)<\/head>/i)?.[1] || "";
@@ -101,22 +93,13 @@ export default {
         }
 
         if (/^(https?:)?\/\//.test(src)) {
-          finalScripts += `<script src="${src}"${type ? ` type="${type}` : ""}></script>`;
+          finalScripts += `<script src="${src}"${type ? ` type="${type}"` : ""}></script>`;
           continue;
         }
 
         try {
           const js = await loadFile(src);
           const rewritten = rewriteFetches(js);
-
-          // cache engine scripts only
-          if(src.includes("engine") || src.includes("components") || src.includes("systems")){
-            const reqEngine = new Request(req.url + "?engine=" + src);
-            ctx.waitUntil(cache.put(reqEngine, new Response(js, {
-              headers: { "Content-Type":"text/javascript", "Cache-Control":"public,max-age=31536000,immutable" }
-            })));
-          }
-
           finalScripts += `<script${type ? ` type="${type}"` : ""}>${rewritten}</script>`;
         } catch {}
       }
