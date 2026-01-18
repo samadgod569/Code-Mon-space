@@ -30,15 +30,22 @@ export default {
           return fetch("https://raw.githubusercontent.com/samadgod569/Code-Mon-space/main/public/" + PREFIX + filename);
 
         const mime = {
-          js:"text/javascript", css:"text/css", json:"application/json",
-          png:"image/png", jpg:"image/jpeg", jpeg:"image/jpeg",
-          svg:"image/svg+xml", wasm:"application/wasm"
+          js:"text/javascript",
+          css:"text/css",
+          json:"application/json",
+          png:"image/png",
+          jpg:"image/jpeg",
+          jpeg:"image/jpeg",
+          svg:"image/svg+xml",
+          wasm:"application/wasm"
         }[ext] || "application/octet-stream";
 
-        const res = new Response(data,{headers:{
-          "Content-Type":mime,
-          "Cache-Control":"public,max-age=31536000,immutable"
-        }});
+        const res = new Response(data,{
+          headers:{
+            "Content-Type":mime,
+            "Cache-Control":"public,max-age=31536000,immutable"
+          }
+        });
 
         ctx.waitUntil(cache.put(req,res.clone()));
         return res;
@@ -66,12 +73,13 @@ export default {
       }
 
       // ---------- STYLES ----------
-      let finalHead = head.replace(/<script[\s\S]*?<\/script>/gi,"")
-                          .replace(/<style[\s\S]*?<\/style>/gi,"")
-                          .replace(/<link[^>]+rel=["']stylesheet["'][^>]*>/gi,"");
+      let finalHead = head
+        .replace(/<script[\s\S]*?<\/script>/gi,"")
+        .replace(/<style[\s\S]*?<\/style>/gi,"")
+        .replace(/<link[^>]+rel=["']stylesheet["'][^>]*>/gi,"");
 
       for(const m of head.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/gi)){
-        finalHead+=`<style>${fixCSSUrls(m[1])}</style>`;
+        finalHead += `<style>${fixCSSUrls(m[1])}</style>`;
       }
 
       for(const l of head.matchAll(/<link[^>]+rel=["']stylesheet["'][^>]*>/gi)){
@@ -89,7 +97,6 @@ export default {
       // ---------- SCRIPT GRAPH ----------
       let finalScripts="";
       const scriptRegex=/<script([^>]*)>([\s\S]*?)<\/script>/gi;
-
       const allScripts=[...head.matchAll(scriptRegex),...body.matchAll(scriptRegex)];
 
       for(const m of allScripts){
@@ -98,16 +105,25 @@ export default {
         const src=attrs.match(/src=["']([^"']+)["']/i)?.[1];
         const type=attrs.match(/type=["']([^"']+)["']/i)?.[1];
 
+        // INLINE SCRIPT
         if(!src){
           finalScripts+=`<script${type?` type="${type}"`:""}>${rewriteFetches(inline)}</script>`;
           continue;
         }
 
+        // CDN SCRIPT
         if(/^(https?:)?\/\//.test(src)){
           finalScripts+=`<script src="${src}"${type?` type="${type}"`:""}></script>`;
           continue;
         }
 
+        // MODULE SCRIPT → SERVE RAW
+        if(type==="module"){
+          finalScripts+=`<script type="module" src="/${user}/${src}"></script>`;
+          continue;
+        }
+
+        // CLASSIC SCRIPT → COMPILE
         try{
           const js=await loadFile(src);
           const rewritten=rewriteFetches(js);
@@ -115,17 +131,9 @@ export default {
           const hash=await crypto.subtle.digest("SHA-384",new TextEncoder().encode(rewritten));
           const integrity="sha384-"+btoa(String.fromCharCode(...new Uint8Array(hash)));
 
-          if(type==="module"||/\b(import|export)\b/.test(js)){
-            const encoded=btoa(unescape(encodeURIComponent(rewritten)));
-            finalScripts+=`
-<script type="module" integrity="${integrity}">
-import(URL.createObjectURL(new Blob([decodeURIComponent(escape(atob("${encoded}")))],{type:"text/javascript"})));
-</script>`;
-          }else{
-            finalScripts+=`<script integrity="${integrity}">${rewritten}
+          finalScripts+=`<script integrity="${integrity}">${rewritten}
 //# sourceMappingURL=${src}.map
 </script>`;
-          }
         }catch{}
       }
 
