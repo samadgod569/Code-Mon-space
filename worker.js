@@ -19,21 +19,45 @@ export default {
         return data;
       }
 
-      // ---------------- RAW FILES (JS/CSS/Assets) ----------------
-      if (!["html","htm"].includes(ext)) {
-        let data = await loadFile(filename, "arrayBuffer");
-        const mime = {
-          js:"text/javascript", css:"text/css", json:"application/json",
-          png:"image/png", jpg:"image/jpeg", jpeg:"image/jpeg",
-          svg:"image/svg+xml", wasm:"application/wasm"
-        }[ext] || "application/octet-stream";
+// ---------------- RAW FILES (JS/CSS/Assets/Media) ----------------
+if (!["html","htm"].includes(ext)) {
+  let data = await loadFile(filename, "arrayBuffer");
 
-        return new Response(data, {
-          headers: {
-            "Content-Type": mime
-          }
-        });
-      }
+  let mime = {
+    js:"text/javascript",
+    css:"text/css",
+    json:"application/json",
+    png:"image/png",
+    jpg:"image/jpeg",
+    jpeg:"image/jpeg",
+    svg:"image/svg+xml",
+    wasm:"application/wasm",
+
+    // audio
+    mp3:"audio/mpeg",
+    wav:"audio/wav",
+    ogg:"audio/ogg",
+    m4a:"audio/mp4",
+
+    // video
+    mp4:"video/mp4",
+    webm:"video/webm",
+    mov:"video/quicktime",
+    avi:"video/x-msvideo"
+  }[ext] || "application/octet-stream";
+
+  // special case for manifest.json
+  if (filename.toLowerCase() === "manifest.json") {
+    mime = "application/manifest+json";
+  }
+
+  return new Response(data, {
+    headers: {
+      "Content-Type": mime,
+      "Accept-Ranges": "bytes"
+    }
+  });
+}
 
       // ---------------- HTML FILES ----------------
       let raw = await loadFile(filename);
