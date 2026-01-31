@@ -7,15 +7,20 @@ export default {
       if (!user) return new Response("Missing user", { status: 400 });
 
       const rawRelPath = parts.slice(1).join("/") || "";
-
       const PREFIX = `${user}/`;
 
       // -----------------------------
-      // KV loader
+      // KV loader with debug
       // -----------------------------
       async function loadFile(name, type = "text") {
         const key = PREFIX + name;
+
+        // DEBUG: list keys under this user prefix
+        const list = await env.FILES.list({ prefix: PREFIX });
+        console.log("KV LIST for user:", list.keys.map(k => k.name));
+
         const data = await env.FILES.get(key, type === "arrayBuffer" ? "arrayBuffer" : "text");
+        console.log("KV GET:", key, data ? "FOUND" : "MISSING");
         if (data == null) throw new Error("Missing " + key);
         return data;
       }
