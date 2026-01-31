@@ -24,7 +24,7 @@ export default {
 
       const lastPart = filename.split("/").pop();
       if (lastPart && !lastPart.includes(".")) {
-        filename = filename + ".html";
+        filename += ".html";
       }
 
       const PREFIX = `${user}/`;
@@ -89,7 +89,10 @@ export default {
 
         let finalScripts = "";
         const scriptRegex = /<script([^>]*)>([\s\S]*?)<\/script>/gi;
-        const allScripts = [...head.matchAll(scriptRegex), ...body.matchAll(scriptRegex)];
+        const allScripts = [
+          ...head.matchAll(scriptRegex),
+          ...body.matchAll(scriptRegex),
+        ];
 
         for (const m of allScripts) {
           const attrs = m[1] || "";
@@ -98,22 +101,31 @@ export default {
           const type = attrs.match(/type=["']([^"']+)["']/i)?.[1];
 
           if (!src) {
-            finalScripts += `<script${type ? ` type="${type}"` : ""}>${rewriteFetches(inline) || ""}</script>`;
+            finalScripts += `<script${
+              type ? ` type="${type}"` : ""
+            }>${rewriteFetches(inline) || ""}</script>`;
             continue;
           }
 
           if (/^(https?:)?\/\//.test(src)) {
-            finalScripts += `<script src="${src}"${type ? ` type="${type}"` : ""}></script>`;
+            finalScripts += `<script src="${src}"${
+              type ? ` type="${type}"` : ""
+            }></script>`;
             continue;
           }
 
           try {
             const js = await loadFile(src);
-            finalScripts += `<script${type ? ` type="${type}"` : ""}>${rewriteFetches(js || "")}</script>`;
+            finalScripts += `<script${
+              type ? ` type="${type}"` : ""
+            }>${rewriteFetches(js || "")}</script>`;
           } catch {}
         }
 
-        const cleanBody = body.replace(/<script[\s\S]*?<\/script>/gi, "");
+        const cleanBody = body.replace(
+          /<script[\s\S]*?<\/script>/gi,
+          ""
+        );
 
         return `<!DOCTYPE html>
 <html>
@@ -127,25 +139,41 @@ ${finalScripts}
 </html>`;
       }
 
-      async function serveNotFound() {
+      async function runCashing(relPath, status) {
         try {
-          const raw404 = await loadFile("404.html");
-          const final404 = await processHTML(raw404);
-          return new Response(final404, {
-            status: 404,
-            headers: { "Content-Type": "text/html; charset=utf-8" },
-          });
+          const code = await loadFile(".cashing");
+
+          const fn = new Function(
+            "path",
+            "status",
+            `"use strict";
+             const fetch = undefined;
+             const WebSocket = undefined;
+             const Request = undefined;
+             const Response = undefined;
+             const env = undefined;
+             ${code}`
+          );
+
+          const result = fn(relPath, status);
+          if (typeof result !== "string") throw 0;
+          return result.replace(/^\/+/, "");
         } catch {
-          return new Response("Not Found", { status: 404 });
+          return null;
         }
       }
 
-      if (!["html", "htm"].includes(ext)) {
+      async function serveDynamic(file, status) {
+        const ext = file.split(".").pop().toLowerCase();
+
         let data;
         try {
-          data = await loadFile(filename, "arrayBuffer");
+          data = await loadFile(
+            file,
+            ext === "html" ? "text" : "arrayBuffer"
+          );
         } catch {
-          return await serveNotFound();
+          return new Response("Not Found", { status: 404 });
         }
 
         let mime = {
@@ -167,32 +195,56 @@ ${finalScripts}
           avi: "video/x-msvideo",
         }[ext] || "application/octet-stream";
 
-        return new Response(data || new ArrayBuffer(0), {
-          headers: {
-            "Content-Type": mime,
-            "Accept-Ranges": "bytes",
-          },
+        const body =
+          ext === "html" ? await processHTML(data) : data;
+
+        return new Response(body, {
+          status,
+          headers: { "Content-Type": mime },
         });
       }
 
-      let raw;
-      try {
-        raw = await loadFile(filename);
-      } catch {
-        return await serveNotFound();
+      // ==== FILE SERVING ====
+
+      if (!["html", "htm"].includes(ext)) {
+        try {
+          const bin = await loadFile(filename, "arrayBuffer");
+          return new Response(bin, {
+            headers: {
+              "Content-Type":
+                {
+                  js: "text/javascript",
+                  css: "text/css",
+                  json: "application/json",
+                }[ext] || "application/octet-stream",
+            },
+          });
+        } catch {
+          const f = await runCashing(filename, 404);
+          if (f) return await serveDynamic(f, 404);
+          return new Response("Not Found", { status: 404 });
+        }
       }
 
-      const finalHTML = await processHTML(raw);
-
-      return new Response(finalHTML, {
-        headers: {
-          "Content-Type": "text/html; charset=utf-8",
-        },
-      });
+      try {
+        const raw = await loadFile(filename);
+        const html = await processHTML(raw);
+        return new Response(html, {
+          headers: { "Content-Type": "text/html; charset=utf-8" },
+        });
+      } catch {
+        const f = await runCashing(filename, 404);
+        if (f) return await serveDynamic(f, 404);
+        return new Response("Not Found", { status: 404 });
+      }
     } catch (e) {
-      return new Response("Worker crash:\n" + (e?.stack || e?.message || e), {
-        status: 500,
-      });
+      try {
+        const url = new URL(req.url);
+        const rel = url.pathname.split("/").slice(2).join("/");
+        const f = await runCashing(rel, 500);
+        if (f) return await serveDynamic(f, 500);
+      } catch {}
+      return new Response("Internal Server Error", { status: 500 });
     }
   },
 };
