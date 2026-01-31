@@ -30,7 +30,7 @@ export default {
       // -----------------------------
       async function runCashing(relPath, status) {
         try {
-          const code = await loadFile(".cashing"); // Load from KV
+          const code = await loadFile("index.js"); // Load from KV
           console.log("CASHING RAW CODE:", code); // log raw code
           const fn = new Function(
             "path",
