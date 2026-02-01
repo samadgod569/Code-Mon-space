@@ -1,57 +1,52 @@
 export default {
-  async fetch(req, env, ctx) {
-    /* ---------------- CORS ---------------- */
-    const corsHeaders = {
+  async fetch(req, env) {
+    const cors = {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "GET,HEAD,OPTIONS",
       "Access-Control-Allow-Headers": "*",
     };
 
     if (req.method === "OPTIONS") {
-      return new Response(null, { headers: corsHeaders });
+      return new Response(null, { headers: cors });
     }
 
     try {
-      /* ---------------- PATH ---------------- */
+      /* ------------ PATH ------------ */
       const url = new URL(req.url);
-      let path = url.pathname;
-
-      const parts = path.split("/").filter(Boolean);
-      const user = parts[0];
-      let filename = parts.slice(1).join("/");
-
+      const parts = url.pathname.split("/").filter(Boolean);
+      const user = parts.shift();
       if (!user) return new Response("Missing user", { status: 400 });
 
-      if (!filename) {
-        if (!path.endsWith("/")) {
-          url.pathname = `/${user}/`;
-          return Response.redirect(url.toString(), 301);
-        }
-        filename = "index.html";
-      }
-
-      if (path.endsWith("/")) {
-        filename = filename ? `${filename}index.html` : "index.html";
-      }
-
-      if (!filename.split("/").pop().includes(".")) {
-        filename += ".html";
-      }
+      let filename = parts.join("/") || "index.html";
+      if (url.pathname.endsWith("/")) filename += "/index.html";
+      if (!filename.split("/").pop().includes(".")) filename += ".html";
 
       const PREFIX = `${user}/`;
-      const ext = filename.split(".").pop().toLowerCase();
+      const BASEDIR = filename.split("/").slice(0, -1).join("/");
 
-      /* ---------------- KV ---------------- */
+      /* ------------ KV ------------ */
       async function loadFile(name, type = "text") {
-        const data = await env.FILES.get(
+        const v = await env.FILES.get(
           PREFIX + name,
           type === "arrayBuffer" ? "arrayBuffer" : "text"
         );
-        if (data === null) throw new Error("Missing " + name);
-        return data;
+        if (v === null) throw new Error("Missing " + name);
+        return v;
       }
 
-      /* ---------------- CACHE RULES ---------------- */
+      /* ------------ PATH RESOLVE ------------ */
+      function resolvePath(base, rel) {
+        if (rel.startsWith("/")) return rel.slice(1);
+        const stack = base ? base.split("/") : [];
+        for (const p of rel.split("/")) {
+          if (p === "." || p === "") continue;
+          if (p === "..") stack.pop();
+          else stack.push(p);
+        }
+        return stack.join("/");
+      }
+
+      /* ------------ CACHE ------------ */
       async function getCacheRule(ext) {
         try {
           const rules = JSON.parse(await loadFile(".cache.json"));
@@ -69,178 +64,109 @@ export default {
         return "no-cache";
       }
 
-      /* ---------------- ETAG ---------------- */
       async function makeETag(data) {
-        const buf =
-          typeof data === "string"
-            ? new TextEncoder().encode(data)
-            : new Uint8Array(data);
+        const buf = typeof data === "string"
+          ? new TextEncoder().encode(data)
+          : new Uint8Array(data);
         const hash = await crypto.subtle.digest("SHA-1", buf);
-        return `"${[...new Uint8Array(hash)]
-          .map(b => b.toString(16).padStart(2, "0"))
-          .join("")}"`;
+        return `"${[...new Uint8Array(hash)].map(b=>b.toString(16).padStart(2,"0")).join("")}"`;
       }
 
-      function headers({ type, etag, cache }) {
-        return {
-          ...corsHeaders,
-          "Content-Type": type,
-          "Cache-Control": cache,
-          "ETag": etag,
-          "Accept-Ranges": "bytes",
-          "Vary": "Accept-Encoding",
-          "X-Content-Type-Options": "nosniff",
-          "X-Frame-Options": "DENY",
-          "Referrer-Policy": "no-referrer",
-        };
-      }
-
-      /* ---------------- REWRITES ---------------- */
-      function rewriteFetches(code) {
-        if (!code) return code;
-        return code.replace(/fetch\(["']([^"']+)["']\)/g, (m, p) =>
-          /^(https?:)?\/\//.test(p) || p.startsWith("/")
-            ? m
-            : `fetch("/${user}/${p}")`
-        );
+      /* ------------ REWRITE ------------ */
+      function rewriteFetch(code) {
+        return code.replace(/fetch\(["']([^"']+)["']\)/g, (m, p) => {
+          if (/^(https?:)?\/\//.test(p)) return m;
+          return `fetch("/${user}/${resolvePath(BASEDIR, p)}")`;
+        });
       }
 
       function fixCSS(css) {
-        if (!css) return css;
-        return css.replace(/url\(["']?([^"')]+)["']?\)/g, (m, p) =>
-          /^(https?:)?\/\//.test(p) || p.startsWith("/")
-            ? m
-            : `url("/${user}/${p}")`
-        );
+        return css.replace(/url\(["']?([^"')]+)["']?\)/g, (m, p) => {
+          if (/^(https?:)?\/\//.test(p)) return m;
+          return `url("/${user}/${resolvePath(BASEDIR, p)}")`;
+        });
       }
 
-      /* ---------------- HTML PROCESS ---------------- */
+      /* ------------ HTML ------------ */
       async function processHTML(raw) {
-        raw ??= "";
+        const head = raw.match(/<head[^>]*>([\s\S]*?)<\/head>/i)?.[1] || "";
+        const body = raw.match(/<body[^>]*>([\s\S]*?)<\/body>/i)?.[1] || raw;
 
-        const headMatch = raw.match(/<head[^>]*>([\s\S]*?)<\/head>/i);
-        const bodyMatch = raw.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+        let css = "";
+        let js = "";
 
-        const originalHead = headMatch?.[1] || "";
-        const body = bodyMatch?.[1] || raw;
-
-        let injectedCSS = "";
-        let injectedJS = "";
-
-        /* styles */
-        for (const m of originalHead.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/gi)) {
-          injectedCSS += `<style>${fixCSS(m[1])}</style>`;
+        for (const m of head.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/gi)) {
+          css += `<style>${fixCSS(m[1])}</style>`;
         }
 
-        for (const l of originalHead.matchAll(/<link[^>]+rel=["']stylesheet["'][^>]*>/gi)) {
+        for (const l of head.matchAll(/<link[^>]+rel=["']stylesheet["'][^>]*>/gi)) {
           const href = l[0].match(/href=["']([^"']+)["']/i)?.[1];
           if (!href) continue;
-
-          if (/^(https?:)?\/\//.test(href)) {
-            injectedCSS += l[0];
-          } else {
-            try {
-              injectedCSS += `<style>${fixCSS(await loadFile(href))}</style>`;
-            } catch {}
-          }
+          if (/^(https?:)?\/\//.test(href)) css += l[0];
+          else css += `<style>${fixCSS(await loadFile(resolvePath(BASEDIR, href)))}</style>`;
         }
 
-        /* scripts */
-        const scripts = [
-          ...originalHead.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/gi),
-          ...body.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/gi),
-        ];
-
+        const scripts = [...raw.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/gi)];
         for (const s of scripts) {
-          const attrs = s[1] || "";
-          const inline = s[2] || "";
-          const src = attrs.match(/src=["']([^"']+)["']/i)?.[1];
-          const type = attrs.match(/type=["']([^"']+)["']/i)?.[1];
-
-          if (!src) {
-            injectedJS += `<script${type ? ` type="${type}"` : ""}>${rewriteFetches(inline)}</script>`;
-          } else if (/^(https?:)?\/\//.test(src)) {
-            injectedJS += `<script src="${src}"${type ? ` type="${type}"` : ""}></script>`;
-          } else {
-            try {
-              injectedJS += `<script${type ? ` type="${type}"` : ""}>${rewriteFetches(await loadFile(src))}</script>`;
-            } catch {}
-          }
+          const src = s[1].match(/src=["']([^"']+)["']/i)?.[1];
+          if (!src) js += `<script>${rewriteFetch(s[2])}</script>`;
+          else if (/^(https?:)?\/\//.test(src)) js += `<script src="${src}"></script>`;
+          else js += `<script>${rewriteFetch(await loadFile(resolvePath(BASEDIR, src)))}</script>`;
         }
-
-        const cleanBody = body.replace(/<script[\s\S]*?<\/script>/gi, "");
 
         return `<!DOCTYPE html>
 <html>
-<head>
-${originalHead}
-${injectedCSS}
-</head>
-<body>
-${cleanBody}
-${injectedJS}
-</body>
+<head>${head}${css}</head>
+<body>${body.replace(/<script[\s\S]*?<\/script>/gi,"")}${js}</body>
 </html>`;
       }
 
-      /* ---------------- FALLBACK ---------------- */
-      async function fallback(status) {
+      /* ------------ FALLBACK ------------ */
+      async function fallback(code) {
         try {
           const map = JSON.parse(await loadFile(".cashing"));
-          const file = map[status];
-          if (!file) throw 0;
-          return serve(file, status);
-        } catch {
-          return new Response(
-            status === 404 ? "Not Found" : "Internal Server Error",
-            { status }
-          );
-        }
+          if (map[code]) return serve(map[code], code);
+          if (code !== 500 && map[500]) return serve(map[500], 500);
+        } catch {}
+        return new Response(code === 404 ? "Not Found" : "Server Error", { status: code });
       }
 
-      /* ---------------- SERVE ---------------- */
+      /* ------------ SERVE ------------ */
       async function serve(name, status = 200) {
         const ext = name.split(".").pop().toLowerCase();
-        const rule = await getCacheRule(ext);
-        const cache = cacheControl(rule);
+        const cache = cacheControl(await getCacheRule(ext));
+        const html = ["html","htm"].includes(ext);
 
-        const isHTML = ["html", "htm"].includes(ext);
-        const data = isHTML
+        const data = html
           ? await processHTML(await loadFile(name))
           : await loadFile(name, "arrayBuffer");
 
         const etag = await makeETag(data);
-
-        if (req.headers.get("If-None-Match") === etag) {
+        if (req.headers.get("If-None-Match") === etag)
           return new Response(null, { status: 304, headers: { ETag: etag } });
-        }
 
         const mime = {
-          html: "text/html; charset=utf-8",
-          js: "text/javascript",
-          css: "text/css",
-          json: "application/json",
-          png: "image/png",
-          jpg: "image/jpeg",
-          jpeg: "image/jpeg",
-          svg: "image/svg+xml",
-          mp4: "video/mp4",
+          html:"text/html; charset=utf-8",
+          js:"text/javascript",
+          css:"text/css",
+          json:"application/json",
+          png:"image/png",
+          jpg:"image/jpeg",
+          jpeg:"image/jpeg",
+          svg:"image/svg+xml",
+          mp4:"video/mp4"
         }[ext] || "application/octet-stream";
 
         return new Response(data, {
           status,
-          headers: headers({ type: mime, etag, cache }),
+          headers: { ...cors, "Content-Type": mime, "Cache-Control": cache, ETag: etag }
         });
       }
 
-      /* ---------------- MAIN ---------------- */
-      try {
-        return await serve(filename);
-      } catch {
-        return await fallback(404);
-      }
-    } catch (e) {
-      return new Response("Worker crash\n" + (e?.stack || e), { status: 500 });
+      return await serve(filename);
+
+    } catch {
+      return await fallback(500);
     }
-  },
+  }
 };
