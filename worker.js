@@ -5,6 +5,12 @@ export default {
       "Access-Control-Allow-Methods": "GET,HEAD,OPTIONS",
       "Access-Control-Allow-Headers": "*",
     };
+    const securityHeaders = {
+  "X-Content-Type-Options": "nosniff",
+  "X-Frame-Options": "DENY",
+  "Referrer-Policy": "strict-origin-when-cross-origin",
+  "Accept-Ranges": "bytes"
+};
 
     if (req.method === "OPTIONS") {
       return new Response(null, { headers: cors });
@@ -158,10 +164,15 @@ export default {
         }[ext] || "application/octet-stream";
 
         return new Response(data, {
-          status,
-          headers: { ...cors, "Content-Type": mime, "Cache-Control": cache, ETag: etag }
-        });
-      }
+  status,
+  headers: {
+    ...cors,
+    ...securityHeaders,
+    "Content-Type": mime,
+    "Cache-Control": cache,
+    "ETag": etag
+  }
+});
 
       return await serve(filename);
 
