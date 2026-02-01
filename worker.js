@@ -104,18 +104,30 @@ export default {
       return new Response(data, { status, headers: { ...cors, ...securityHeaders, "Content-Type": mime, "Cache-Control": cache, "ETag": etag } });
     };
 
-    const fallback = async (code, user) => {
-      let map = {};
-      try { map = JSON.parse(await loadFile(`${user}/.cashing`)); } catch {}
-      if (map[code]) {
-        try { return await serve(map[code], user, code); } catch {}
-      }
-      if (code !== 500 && map[500]) {
-        try { return await serve(map[500], user, 500); } catch {}
-      }
-      return new Response(code === 404 ? "Not Found" : "Server Error", { status: code });
-    };
+async function fallback(code) {
+  let map = {};
+  try {
+    map = JSON.parse(await loadFile(".cashing"));
+  } catch {}
 
+  
+  if (code === 404 && map[404]) {
+    try { return await serve(map[404], 404, true); } catch {}
+  }
+
+  
+  if (map[code]) {
+    try { return await serve(map[code], code, true); } catch {}
+  }
+
+  
+  if (code !== 500 && map[500]) {
+    try { return await serve(map[500], 500, true); } catch {}
+  }
+
+  
+  return new Response(code === 404 ? "Not Found" : "Server Error", { status: code });
+}
     try {
       const url = new URL(req.url);
       const parts = url.pathname.split("/").filter(Boolean);
