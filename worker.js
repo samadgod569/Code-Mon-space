@@ -132,14 +132,24 @@ export default {
         });
       }
 
-      async function fallback(code) {
-        let map = {};
-        try { map = JSON.parse(await loadFile(".cashing")); } catch {}
-        if (map[code]) try { return await serve(map[code], code, true); } catch {}
-        if (code !== 500 && map[500]) try { return await serve(map[500], 500, true); } catch {}
-        return new Response(code === 404 ? "Not Found" : "Server Error", { status: code });
-      }
 
+async function fallback(code) {
+  let map = {};
+  try { map = JSON.parse(await loadFile(".cashing")); } catch {}
+  
+  // Try the fallback for this code
+  if (map[code]) {
+    try { return await serve(map[code], code, true); } catch {}
+  }
+  
+  // If code is not 500, try the 500 fallback
+  if (code !== 500 && map[500]) {
+    try { return await serve(map[500], 500, true); } catch {}
+  }
+
+  // If all fails, return plain text
+  return new Response(code === 404 ? "Not Found" : "Server Error", { status: code });
+}
       return await serve(filename);
 
     } catch {
