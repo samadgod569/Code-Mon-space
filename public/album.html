@@ -169,12 +169,7 @@ async function renderGallery() {
     info.className = "image-info";
     info.innerHTML =
       file +
-      '<br><code>&lt;img src="' +
-      "/" +
-      user +
-      "/" +
-      file +
-      '" /&gt;</code>';
+      '<br><code>&lt;img src="'+ file +'" /&gt;</code>';
 
     card.appendChild(img);
     card.appendChild(info);
