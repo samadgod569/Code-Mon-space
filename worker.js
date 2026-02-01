@@ -29,7 +29,7 @@ export default {
 
     async function loadFile(name, type = "text") {
       const v = await env.FILES.get(PREFIX + name, type === "arrayBuffer" ? "arrayBuffer" : "text");
-      if (v === null) throw new Error("Missing " + name);
+      if (v === null) throw new Error("MISSING_FILE");
       return v;
     }
 
@@ -125,29 +125,24 @@ export default {
         }[ext] || "application/octet-stream";
 
         return new Response(data, { status, headers: { ...cors, ...securityHeaders, "Content-Type": mime, "Cache-Control": cache, "ETag": etag } });
-      } catch {
-        return fallback(500);
+      } catch (err) {
+        if (err.message === "MISSING_FILE") throw 404;
+        throw err;
       }
     }
 
     async function fallback(code) {
       let map = {};
       try { map = JSON.parse(await loadFile(".cashing")); } catch {}
-      if (code === 404 && map[404]) {
-        try { return await serve(map[404], 404); } catch {}
-      }
-      if (map[code]) {
-        try { return await serve(map[code], code); } catch {}
-      }
-      if (code !== 500 && map[500]) {
-        try { return await serve(map[500], 500); } catch {}
-      }
+      if (code === 404 && map[404]) try { return await serve(map[404], 404); } catch {}
+      if (code !== 500 && map[500]) try { return await serve(map[500], 500); } catch {}
       return new Response(code === 404 ? "Not Found" : "Server Error", { status: code });
     }
 
     try {
       return await serve(filename);
-    } catch {
+    } catch (err) {
+      if (err === 404) return await fallback(404);
       return await fallback(500);
     }
   }
