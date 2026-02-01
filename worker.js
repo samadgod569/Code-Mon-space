@@ -3,21 +3,21 @@ export default {
     const cors = {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "GET,HEAD,OPTIONS",
-      "Access-Control-Allow-Headers": "*",
+      "Access-Control-Allow-Headers": "*"
     };
+
     const securityHeaders = {
-  "X-Content-Type-Options": "nosniff",
-  "X-Frame-Options": "DENY",
-  "Referrer-Policy": "strict-origin-when-cross-origin",
-  "Accept-Ranges": "bytes"
-};
+      "X-Content-Type-Options": "nosniff",
+      "X-Frame-Options": "DENY",
+      "Referrer-Policy": "strict-origin-when-cross-origin",
+      "Accept-Ranges": "bytes"
+    };
 
     if (req.method === "OPTIONS") {
       return new Response(null, { headers: cors });
     }
 
     try {
-      /* ------------ PATH ------------ */
       const url = new URL(req.url);
       const parts = url.pathname.split("/").filter(Boolean);
       const user = parts.shift();
@@ -30,7 +30,6 @@ export default {
       const PREFIX = `${user}/`;
       const BASEDIR = filename.split("/").slice(0, -1).join("/");
 
-      /* ------------ KV ------------ */
       async function loadFile(name, type = "text") {
         const v = await env.FILES.get(
           PREFIX + name,
@@ -40,19 +39,17 @@ export default {
         return v;
       }
 
-      /* ------------ PATH RESOLVE ------------ */
       function resolvePath(base, rel) {
         if (rel.startsWith("/")) return rel.slice(1);
         const stack = base ? base.split("/") : [];
         for (const p of rel.split("/")) {
-          if (p === "." || p === "") continue;
+          if (!p || p === ".") continue;
           if (p === "..") stack.pop();
           else stack.push(p);
         }
         return stack.join("/");
       }
 
-      /* ------------ CACHE ------------ */
       async function getCacheRule(ext) {
         try {
           const rules = JSON.parse(await loadFile(".cache.json"));
@@ -75,10 +72,9 @@ export default {
           ? new TextEncoder().encode(data)
           : new Uint8Array(data);
         const hash = await crypto.subtle.digest("SHA-1", buf);
-        return `"${[...new Uint8Array(hash)].map(b=>b.toString(16).padStart(2,"0")).join("")}"`;
+        return `"${[...new Uint8Array(hash)].map(b => b.toString(16).padStart(2,"0")).join("")}"`;
       }
 
-      /* ------------ REWRITE ------------ */
       function rewriteFetch(code) {
         return code.replace(/fetch\(["']([^"']+)["']\)/g, (m, p) => {
           if (/^(https?:)?\/\//.test(p)) return m;
@@ -93,7 +89,6 @@ export default {
         });
       }
 
-      /* ------------ HTML ------------ */
       async function processHTML(raw) {
         const head = raw.match(/<head[^>]*>([\s\S]*?)<\/head>/i)?.[1] || "";
         const body = raw.match(/<body[^>]*>([\s\S]*?)<\/body>/i)?.[1] || raw;
@@ -127,7 +122,6 @@ export default {
 </html>`;
       }
 
-      /* ------------ FALLBACK ------------ */
       async function fallback(code) {
         try {
           const map = JSON.parse(await loadFile(".cashing"));
@@ -137,7 +131,6 @@ export default {
         return new Response(code === 404 ? "Not Found" : "Server Error", { status: code });
       }
 
-      /* ------------ SERVE ------------ */
       async function serve(name, status = 200) {
         const ext = name.split(".").pop().toLowerCase();
         const cache = cacheControl(await getCacheRule(ext));
@@ -148,8 +141,9 @@ export default {
           : await loadFile(name, "arrayBuffer");
 
         const etag = await makeETag(data);
-        if (req.headers.get("If-None-Match") === etag)
+        if (req.headers.get("If-None-Match") === etag) {
           return new Response(null, { status: 304, headers: { ETag: etag } });
+        }
 
         const mime = {
           html:"text/html; charset=utf-8",
@@ -164,15 +158,16 @@ export default {
         }[ext] || "application/octet-stream";
 
         return new Response(data, {
-  status,
-  headers: {
-    ...cors,
-    ...securityHeaders,
-    "Content-Type": mime,
-    "Cache-Control": cache,
-    "ETag": etag
-  }
-});
+          status,
+          headers: {
+            ...cors,
+            ...securityHeaders,
+            "Content-Type": mime,
+            "Cache-Control": cache,
+            "ETag": etag
+          }
+        });
+      }
 
       return await serve(filename);
 
