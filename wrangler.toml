@@ -1,6 +1,12 @@
 name = "code-mon-space"
-main = "worker.js" # or src/index.js
+main = "worker.js"
 compatibility_date = "2025-12-28"
+
+workers_dev = true
+
+routes = [
+  { pattern = "*.code-mon-space.shop/*", zone_name = "code-mon-space.shop" }
+]
 [[kv_namespaces]]
 binding = "APP"
 id = "16cae66906a24d1f8862fad185187cd9"
