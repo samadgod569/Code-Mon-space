@@ -96,43 +96,25 @@ export default {
     /* =========================
        GITHUB MODE
     ========================= */
-    async function serveGitHub() {
+    
+async function serveGitHub() {
   const cfgRaw = await env.STORAGE.get(`website/git/${website}`, "text");
   if (!cfgRaw) throw new FileNotFound();
 
   const cfg = JSON.parse(cfgRaw);
   const base = cfg.url.replace(/\/+$/, "");
 
-  // ALWAYS normalize path
-  let filePath = path;
-
-  if (!filePath || filePath === "") {
-    filePath = "index.html";
-  }
-
-  if (filePath.endsWith("/")) {
-    filePath += "index.html";
-  }
-
-  if (!filePath.split("/").pop().includes(".")) {
-    filePath += ".html";
-  }
+  let filePath = path || "";
+  if (filePath.endsWith("/")) filePath += "index.html";
+  if (!filePath) filePath = "index.html";
 
   const finalUrl = `${base}/${filePath}`;
 
-  const res = await fetch(finalUrl, {
-    redirect: "follow",
-    headers: {
-      "User-Agent": "Mozilla/5.0 CodeMon"
-    }
-  });
-
-  if (!res.ok) {
-    return new Response("Not Found", { status: 404 });
-  }
+  const res = await fetch(finalUrl, { redirect: "follow" });
+  if (!res.ok) return new Response("Not Found", { status: 404 });
 
   const data = await res.arrayBuffer();
-  const ext = filePath.split(".").pop().toLowerCase();
+  const ext = filePath.split(".").pop()?.toLowerCase() || "html";
   const etag = await makeETag(data);
 
   if (req.headers.get("If-None-Match") === etag) {
@@ -148,8 +130,7 @@ export default {
       "ETag": etag
     }
   });
-    }
-
+}
     /* =========================
        FALLBACK
     ========================= */
