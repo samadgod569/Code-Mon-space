@@ -99,36 +99,27 @@ export default {
     
 async function serveGitHub() {
   const cfgRaw = await env.STORAGE.get(`website/git/${website}`, "text");
-  if (!cfgRaw) throw new FileNotFound();
+  if (!cfgRaw) {
+    return new Response("Config not found", { status: 404 });
+  }
 
-  const cfg = JSON.parse(cfgRaw);
-  const base = cfg.url.replace(/\/+$/, "");
+  const { url } = JSON.parse(cfgRaw);
+  const base = url.replace(/\/+$/, "");
 
   let filePath = path || "";
-  if (filePath.endsWith("/")) filePath += "index.html";
-  if (!filePath) filePath = "index.html";
+  if (!filePath || filePath.endsWith("/")) {
+    filePath += "index.html";
+  }
 
   const finalUrl = `${base}/${filePath}`;
 
-  const res = await fetch(finalUrl, { redirect: "follow" });
-  if (!res.ok) return new Response("Not Found", { status: 404 });
+  const res = await fetch(finalUrl, {
+    redirect: "follow"
+  });
 
-  const data = await res.arrayBuffer();
-  const ext = filePath.split(".").pop()?.toLowerCase() || "html";
-  const etag = await makeETag(data);
-
-  if (req.headers.get("If-None-Match") === etag) {
-    return new Response(null, { status: 304 });
-  }
-
-  return new Response(data, {
-    headers: {
-      ...cors,
-      ...securityHeaders,
-      "Content-Type": mime(ext),
-      "Cache-Control": cacheControl(ext),
-      "ETag": etag
-    }
+  return new Response(res.body, {
+    status: res.status,
+    headers: res.headers
   });
 }
     /* =========================
