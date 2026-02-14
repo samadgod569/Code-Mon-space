@@ -18,8 +18,6 @@ export default {
     }
 
     const url = new URL(req.url);
-
-    
     const hostParts = url.hostname.split(".");
     const user = hostParts[0];
 
@@ -27,104 +25,173 @@ export default {
       return new Response("Invalid user", { status: 400 });
     }
 
-    // FILE PATH
     let path = url.pathname.replace(/^\/+/, "");
     if (!path || path.endsWith("/")) path += "index.html";
     if (!path.split("/").pop().includes(".")) path += ".html";
 
-    const key = `${user}/${path}`;
+    const isGitHub = user.startsWith("e-");
+    const website = isGitHub ? user.slice(2) : user;
 
-    class FileNotFound extends Error {
-      constructor() {
-        super("File not found");
-        this.status = 404;
-      }
-    }
+    class FileNotFound extends Error {}
 
-    async function loadFile(name, type = "arrayBuffer") {
-      const file = await env.FILES.get(name, type);
-      if (file === null) throw new FileNotFound();
-      return file;
-    }
-
-    async function getCacheRule(ext) {
-      try {
-        const rules = JSON.parse(
-          await loadFile(`${user}/.cache.json`, "text")
-        );
-        return rules[ext] || rules.default || "no-cache";
-      } catch {
-        return ["js","css","png","jpg","jpeg","svg","mp4"]
-          .includes(ext) ? "1y" : "no-cache";
-      }
-    }
-
-    function cacheControl(rule) {
-      if (rule === "1y") return "public, max-age=31536000, immutable";
-      if (rule.endsWith("s")) return `public, max-age=${rule}`;
-      return "no-cache";
-    }
-
+    /* =========================
+       UTIL
+    ========================= */
     async function makeETag(data) {
-      const buf = new Uint8Array(data);
+      const buf = typeof data === "string"
+        ? new TextEncoder().encode(data)
+        : new Uint8Array(data);
       const hash = await crypto.subtle.digest("SHA-1", buf);
       return `"${[...new Uint8Array(hash)]
-        .map(b => b.toString(16).padStart(2,"0"))
+        .map(b => b.toString(16).padStart(2, "0"))
         .join("")}"`;
     }
 
-    async function serveFile(name, status = 200) {
-      const ext = name.split(".").pop().toLowerCase();
-      const cache = cacheControl(await getCacheRule(ext));
-      const data = await loadFile(name);
+    function cacheControl(ext) {
+      if (["js","css","png","jpg","jpeg","svg","mp4"].includes(ext)) {
+        return "public, max-age=31536000, immutable";
+      }
+      return "no-cache";
+    }
+
+    /* =========================
+       NORMAL KV MODE
+    ========================= */
+    async function serveKV() {
+      let cashing = null;
+      try {
+        cashing = JSON.parse(
+          await env.FILES.get(`${user}/.cashing`, "text")
+        );
+      } catch {}
+
+      let finalPath = path;
+      if (cashing?.starting_dir) {
+        finalPath = `${cashing.starting_dir}/${path}`;
+      }
+
+      const key = `${user}/${finalPath}`;
+
+      const data = await env.FILES.get(key, "arrayBuffer");
+      if (!data) throw new FileNotFound();
+
+      const ext = finalPath.split(".").pop().toLowerCase();
       const etag = await makeETag(data);
 
       if (req.headers.get("If-None-Match") === etag) {
         return new Response(null, { status: 304 });
       }
 
-      const mime = {
-        html: "text/html; charset=utf-8",
-        js: "text/javascript",
-        css: "text/css",
-        json: "application/json",
-        png: "image/png",
-        jpg: "image/jpeg",
-        jpeg: "image/jpeg",
-        svg: "image/svg+xml",
-        mp4: "video/mp4"
-      }[ext] || "application/octet-stream";
-
       return new Response(data, {
-        status,
         headers: {
           ...cors,
           ...securityHeaders,
-          "Content-Type": mime,
-          "Cache-Control": cache,
+          "Content-Type": mime(ext),
+          "Cache-Control": cacheControl(ext),
           "ETag": etag
         }
       });
     }
 
-    async function fallback(code) {
+    /* =========================
+       GITHUB MODE
+    ========================= */
+    async function serveGitHub() {
+      const cfgRaw = await env.STORAGE.get(`website/git/${website}`, "text");
+      if (!cfgRaw) throw new FileNotFound();
+
+      const cfg = JSON.parse(cfgRaw);
+      const base = cfg.url.replace(/\/$/, "");
+
+      let cashing = null;
       try {
-        const map = JSON.parse(
-          await loadFile(`${user}/.cashing`, "text")
-        );
-        if (map[code]) return serveFile(`${user}/${map[code]}`, code);
+        const res = await fetch(`${base}/.cashing`);
+        if (res.ok) cashing = await res.json();
       } catch {}
-      return new Response(
-        code === 404 ? "Not Found" : "Server Error",
-        { status: code }
-      );
+
+      let finalPath = path;
+      if (cashing?.starting_dir) {
+        finalPath = `${cashing.starting_dir}/${path}`;
+      }
+
+      const res = await fetch(`${base}/${finalPath}`);
+      if (!res.ok) throw new FileNotFound();
+
+      const data = await res.arrayBuffer();
+      const ext = finalPath.split(".").pop().toLowerCase();
+      const etag = await makeETag(data);
+
+      if (req.headers.get("If-None-Match") === etag) {
+        return new Response(null, { status: 304 });
+      }
+
+      return new Response(data, {
+        headers: {
+          ...cors,
+          ...securityHeaders,
+          "Content-Type": mime(ext),
+          "Cache-Control": cacheControl(ext),
+          "ETag": etag
+        }
+      });
     }
 
+    /* =========================
+       FALLBACK
+    ========================= */
+    async function fallback(code) {
+      try {
+        if (isGitHub) {
+          const cfg = JSON.parse(
+            await env.STORAGE.get(`website/git/${website}`, "text")
+          );
+          const res = await fetch(`${cfg.url}/.cashing`);
+          if (res.ok) {
+            const map = await res.json();
+            if (map[code]) {
+              return fetch(`${cfg.url}/${map[code]}`);
+            }
+          }
+        } else {
+          const map = JSON.parse(
+            await env.FILES.get(`${user}/.cashing`, "text")
+          );
+          if (map[code]) {
+            return serveKV(`${user}/${map[code]}`, code);
+          }
+        }
+      } catch {}
+
+      return new Response(code === 404 ? "Not Found" : "Server Error", {
+        status: code
+      });
+    }
+
+    /* =========================
+       MAIN
+    ========================= */
     try {
-      return await serveFile(key);
+      return isGitHub ? await serveGitHub() : await serveKV();
     } catch (err) {
       if (err instanceof FileNotFound) return fallback(404);
       return fallback(500);
     }
   }
 };
+
+/* =========================
+   MIME
+========================= */
+function mime(ext) {
+  return {
+    html: "text/html; charset=utf-8",
+    js: "text/javascript",
+    css: "text/css",
+    json: "application/json",
+    png: "image/png",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    svg: "image/svg+xml",
+    mp4: "video/mp4"
+  }[ext] || "application/octet-stream";
+          }
