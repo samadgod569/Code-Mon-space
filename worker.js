@@ -105,29 +105,41 @@ export default {
     }
 
     async function serveGitHub() {
-      const cfgRaw = await env.STORAGE.get(`website/git/${website}`, "text");
-      if (!cfgRaw) {
-        return new Response("Config not found", { status: 404 });
-      }
+  const cfgRaw = await env.STORAGE.get(`website/git/${website}`, "text");
+  if (!cfgRaw) {
+    return new Response("Config not found", { status: 404 });
+  }
 
-      const { url } = JSON.parse(cfgRaw);
-      const base = url.replace(/\/+$/, "");
-      const finalUrl = `${base}/${path}`;
+  const { url } = JSON.parse(cfgRaw);
+  const base = url.replace(/\/+$/, "");
+  let filePath = path;
 
-      const res = await fetch(finalUrl, {
-        redirect: "follow",
-        headers: { ...cors, ...securityHeaders }
-      });
+  // Ensure index.html if path is empty or ends with /
+  if (!filePath || filePath.endsWith("/")) filePath += "index.html";
+  if (!filePath.split("/").pop().includes(".")) filePath += ".html";
 
-      return new Response(res.body, {
-        status: res.status,
-        headers: {
-          ...cors,
-          ...securityHeaders,
-          "Content-Type": res.headers.get("content-type") || "application/octet-stream",
-          "Cache-Control": res.headers.get("cache-control") || "no-cache"
-        }
-      });
+  const finalUrl = `${base}/${filePath}`;
+
+  // Fetch with proper redirects and minimal headers
+  const res = await fetch(finalUrl, { redirect: "follow" });
+
+  // Clone the headers safely
+  const headers = new Headers();
+  headers.set("Content-Type", res.headers.get("content-type") || "application/octet-stream");
+  headers.set("Cache-Control", res.headers.get("cache-control") || "no-cache");
+  headers.set("X-Content-Type-Options", "nosniff");
+  headers.set("X-Frame-Options", "DENY");
+  headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  headers.set("Access-Control-Allow-Origin", "*");
+  headers.set("Access-Control-Allow-Methods", "GET,HEAD,OPTIONS");
+  headers.set("Access-Control-Allow-Headers", "*");
+
+  const data = await res.arrayBuffer(); // always get buffer to avoid empty body
+
+  return new Response(data, {
+    status: res.status,
+    headers
+  });
     }
 
     async function fallback(code) {
