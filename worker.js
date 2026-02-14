@@ -101,35 +101,33 @@ export default {
   if (!cfgRaw) throw new FileNotFound();
 
   const cfg = JSON.parse(cfgRaw);
-  const base = cfg.url.replace(/\/+$/, ""); // strip trailing /
+  const base = cfg.url.replace(/\/+$/, "");
 
-  // ---------- normalize path ----------
-  let filePath = path;
-  if (!filePath || filePath.endsWith("/")) filePath += "index.html";
-  if (!filePath.split("/").pop().includes(".")) filePath += ".html";
+  // DO NOT FORCE .html FOR GITHUB
+  let filePath = path || "";
 
-  // ---------- load .cashing ----------
+  // try loading .cashing
   let cashing = null;
   try {
     const r = await fetch(`${base}/.cashing`, { redirect: "follow" });
     if (r.ok) cashing = await r.json();
   } catch {}
 
-  // ---------- apply starting_dir ----------
+  // apply starting_dir (GitHub-style)
   if (cashing?.starting_dir) {
     filePath = `${cashing.starting_dir.replace(/\/+$/, "")}/${filePath}`;
   }
 
-  const finalUrl = `${base}/${filePath}`;
+  const finalUrl = filePath
+    ? `${base}/${filePath}`
+    : `${base}/`;
 
-  // ---------- fetch file ----------
   const res = await fetch(finalUrl, {
     redirect: "follow",
     headers: { "User-Agent": "CodeMon-Worker" }
   });
 
   if (!res.ok) {
-    // 404 / 500 fallback from .cashing
     if (cashing?.[res.status]) {
       const fb = await fetch(`${base}/${cashing[res.status]}`);
       if (fb.ok) return fb;
@@ -138,7 +136,7 @@ export default {
   }
 
   const data = await res.arrayBuffer();
-  const ext = filePath.split(".").pop().toLowerCase();
+  const contentType = res.headers.get("content-type") || "application/octet-stream";
   const etag = await makeETag(data);
 
   if (req.headers.get("If-None-Match") === etag) {
@@ -149,10 +147,8 @@ export default {
     headers: {
       ...cors,
       ...securityHeaders,
-      "Content-Type": mime(ext),
-      "Cache-Control": cacheControl(
-        cashing?.cache?.[ext] ?? (["js","css","png","jpg","jpeg","svg","mp4"].includes(ext) ? "1y" : "no-cache")
-      ),
+      "Content-Type": contentType,
+      "Cache-Control": "no-cache",
       "ETag": etag
     }
   });
