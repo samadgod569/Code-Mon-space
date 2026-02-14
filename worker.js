@@ -97,45 +97,66 @@ export default {
        GITHUB MODE
     ========================= */
     async function serveGitHub() {
-      const cfgRaw = await env.STORAGE.get(`website/git/${website}`, "text");
-      if (!cfgRaw) throw new FileNotFound();
+  const cfgRaw = await env.STORAGE.get(`website/git/${website}`, "text");
+  if (!cfgRaw) throw new FileNotFound();
 
-      const cfg = JSON.parse(cfgRaw);
-      const base = cfg.url.replace(/\/$/, "");
+  const cfg = JSON.parse(cfgRaw);
+  const base = cfg.url.replace(/\/+$/, ""); // strip trailing /
 
-      let cashing = null;
-      try {
-        const res = await fetch(`${base}/.cashing`);
-        if (res.ok) cashing = await res.json();
-      } catch {}
+  // ---------- normalize path ----------
+  let filePath = path;
+  if (!filePath || filePath.endsWith("/")) filePath += "index.html";
+  if (!filePath.split("/").pop().includes(".")) filePath += ".html";
 
-      let finalPath = path;
-      if (cashing?.starting_dir) {
-        finalPath = `${cashing.starting_dir}/${path}`;
-      }
+  // ---------- load .cashing ----------
+  let cashing = null;
+  try {
+    const r = await fetch(`${base}/.cashing`, { redirect: "follow" });
+    if (r.ok) cashing = await r.json();
+  } catch {}
 
-      const res = await fetch(`${base}/${finalPath}`);
-      if (!res.ok) throw new FileNotFound();
+  // ---------- apply starting_dir ----------
+  if (cashing?.starting_dir) {
+    filePath = `${cashing.starting_dir.replace(/\/+$/, "")}/${filePath}`;
+  }
 
-      const data = await res.arrayBuffer();
-      const ext = finalPath.split(".").pop().toLowerCase();
-      const etag = await makeETag(data);
+  const finalUrl = `${base}/${filePath}`;
 
-      if (req.headers.get("If-None-Match") === etag) {
-        return new Response(null, { status: 304 });
-      }
+  // ---------- fetch file ----------
+  const res = await fetch(finalUrl, {
+    redirect: "follow",
+    headers: { "User-Agent": "CodeMon-Worker" }
+  });
 
-      return new Response(data, {
-        headers: {
-          ...cors,
-          ...securityHeaders,
-          "Content-Type": mime(ext),
-          "Cache-Control": cacheControl(ext),
-          "ETag": etag
-        }
-      });
+  if (!res.ok) {
+    // 404 / 500 fallback from .cashing
+    if (cashing?.[res.status]) {
+      const fb = await fetch(`${base}/${cashing[res.status]}`);
+      if (fb.ok) return fb;
     }
+    throw new FileNotFound();
+  }
 
+  const data = await res.arrayBuffer();
+  const ext = filePath.split(".").pop().toLowerCase();
+  const etag = await makeETag(data);
+
+  if (req.headers.get("If-None-Match") === etag) {
+    return new Response(null, { status: 304 });
+  }
+
+  return new Response(data, {
+    headers: {
+      ...cors,
+      ...securityHeaders,
+      "Content-Type": mime(ext),
+      "Cache-Control": cacheControl(
+        cashing?.cache?.[ext] ?? (["js","css","png","jpg","jpeg","svg","mp4"].includes(ext) ? "1y" : "no-cache")
+      ),
+      "ETag": etag
+    }
+  });
+    }
     /* =========================
        FALLBACK
     ========================= */
