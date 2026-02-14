@@ -3,7 +3,7 @@ export default {
     const cors = {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "GET,HEAD,OPTIONS",
-      "Access-Control-Allow-Headers": "*"
+      "Access-Control-Allow-Headers": ""
     };
 
     const securityHeaders = {
@@ -25,13 +25,12 @@ export default {
       return new Response("Invalid user", { status: 400 });
     }
 
+    // Normalize path
     let path = url.pathname.replace(/^\/+/, "");
     if (!path || path.endsWith("/")) path += "index.html";
     if (!path.split("/").pop().includes(".")) path += ".html";
 
-    const isGitHub = user.startsWith("e-");
-    const website = isGitHub ? user.slice(2) : user;
-
+    // Custom error class
     class FileNotFound extends Error {
       constructor() {
         super("File not found");
@@ -39,20 +38,29 @@ export default {
       }
     }
 
+    // Helper: load file from KV with error handling
     async function loadFile(name, type = "arrayBuffer") {
       const file = await env.FILES.get(name, type);
       if (file === null) throw new FileNotFound();
       return file;
     }
 
-    async function getCacheRule(ext) {
+    // Helper: load JSON config from KV (returns null if missing/invalid)
+    async function loadConfig(user, file) {
+      try {
+        return JSON.parse(await env.FILES.get(`${user}/${file}`, "text"));
+      } catch {
+        return null;
+      }
+    }
+
+    // Helper: get cache rule from .cache.json
+    async function getCacheRule(user, ext) {
       try {
         const rules = JSON.parse(await loadFile(`${user}/.cache.json`, "text"));
         return rules[ext] || rules.default || "no-cache";
       } catch {
-        return ["js","css","png","jpg","jpeg","svg","mp4"].includes(ext)
-          ? "1y"
-          : "no-cache";
+        return ["js", "css", "png", "jpg", "jpeg", "svg", "mp4"].includes(ext) ? "1y" : "no-cache";
       }
     }
 
@@ -65,15 +73,14 @@ export default {
     async function makeETag(data) {
       const buf = new Uint8Array(data);
       const hash = await crypto.subtle.digest("SHA-1", buf);
-      return `"${[...new Uint8Array(hash)]
-        .map(b => b.toString(16).padStart(2, "0"))
-        .join("")}"`;
+      return `"${[...new Uint8Array(hash)].map(b => b.toString(16).padStart(2, "0")).join("")}"`;
     }
 
-    async function serveFile(name, status = 200) {
-      const ext = name.split(".").pop().toLowerCase();
-      const cache = cacheControl(await getCacheRule(ext));
-      const data = await loadFile(name);
+    // Helper: serve a file from KV with proper headers
+    async function serveFile(key, status = 200, customCacheRule = null) {
+      const ext = key.split(".").pop().toLowerCase();
+      const cache = customCacheRule ? cacheControl(customCacheRule) : cacheControl(await getCacheRule(user, ext));
+      const data = await loadFile(key);
       const etag = await makeETag(data);
 
       if (req.headers.get("If-None-Match") === etag) {
@@ -104,96 +111,154 @@ export default {
       });
     }
 
-    async function serveGitHub() {
-  const cfgRaw = await env.STORAGE.get(`website/git/${website}`, "text");
-  if (!cfgRaw) {
-    return new Response("Config not found", { status: 404 });
-  }
-
-  const { url } = JSON.parse(cfgRaw);
-  const base = url.replace(/\/+$/, "");
-  let filePath = path;
-
-  // Ensure index.html if path is empty or ends with /
-  if (!filePath || filePath.endsWith("/")) filePath += "index.html";
-  if (!filePath.split("/").pop().includes(".")) filePath += ".html";
-
-  const finalUrl = `${base}/${filePath}`;
-
-  // Fetch with proper redirects and minimal headers
-  const res = await fetch(finalUrl, { redirect: "follow" });
-
-  // Clone the headers safely
-  const headers = new Headers();
-  headers.set("Content-Type", res.headers.get("content-type") || "application/octet-stream");
-  headers.set("Cache-Control", res.headers.get("cache-control") || "no-cache");
-  headers.set("X-Content-Type-Options", "nosniff");
-  headers.set("X-Frame-Options", "DENY");
-  headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
-  headers.set("Access-Control-Allow-Origin", "*");
-  headers.set("Access-Control-Allow-Methods", "GET,HEAD,OPTIONS");
-  headers.set("Access-Control-Allow-Headers", "*");
-
-  const data = await res.arrayBuffer(); // always get buffer to avoid empty body
-
-  return new Response(data, {
-    status: res.status,
-    headers
-  });
+    // Helper: fallback error pages using .cashing map
+    async function fallback(code, config = null) {
+      // If config not provided, try to load it
+      if (!config) {
+        config = await loadConfig(user, ".cashing");
+      }
+      if (config && config[code]) {
+        // If starting_dir is set, prepend it to error page path
+        const baseDir = config.starting_dir ? `${config.starting_dir}/` : "";
+        try {
+          return await serveFile(`${user}/${baseDir}${config[code]}`, code);
+        } catch {
+          // fall through to default
+        }
+      }
+      return new Response(code === 404 ? "Not Found" : "Server Error", { status: code });
     }
 
-    async function fallback(code) {
+    // ========== GITHUB MODE (e- subdomain) ==========
+    if (user.startsWith("e-")) {
+      const website = user.slice(2); // remove "e-"
+      // Look up GitHub info from STORAGE KV
+      let gitInfo;
       try {
-        const map = JSON.parse(await loadFile(`${user}/.cashing`, "text"));
-        if (map[code]) return serveFile(`${user}/${map[code]}`, code);
-      } catch {}
-      return new Response(
-        code === 404 ? "Not Found" : "Server Error",
-        { status: code }
-      );
-    }
+        const gitData = await env.STORAGE.get(`${website}/git/${website}`, "text");
+        gitInfo = JSON.parse(gitData);
+      } catch {
+        return new Response("GitHub site not configured", { status: 404 });
+      }
+      if (!gitInfo || !gitInfo.url) {
+        return new Response("Invalid GitHub configuration", { status: 500 });
+      }
+      const baseUrl = gitInfo.url.replace(/\/$/, ""); // remove trailing slash
 
-    try {
-      return isGitHub ? await serveGitHub() : await serveKV();
-    } catch (err) {
-      if (err instanceof FileNotFound) return fallback(404);
-      return fallback(500);
-    }
+      // Fetch .cashing from the GitHub repo
+      let cashingConfig = null;
+      try {
+        const cashingRes = await fetch(`${baseUrl}/.cashing`);
+        if (cashingRes.ok) {
+          cashingConfig = await cashingRes.json();
+        }
+      } catch {
+        // ignore, proceed without .cashing
+      }
 
-    async function serveKV() {
-      let finalPath = path;
-      const data = await loadFile(`${user}/${finalPath}`, "arrayBuffer");
-      const ext = finalPath.split(".").pop().toLowerCase();
+      // Determine actual file path with starting_dir
+      let filePath = path;
+      if (cashingConfig && cashingConfig.starting_dir) {
+        filePath = `${cashingConfig.starting_dir}/${path}`;
+      }
+
+      // Fetch the file from GitHub
+      const fileRes = await fetch(`${baseUrl}/${filePath}`);
+      if (!fileRes.ok) {
+        // Try custom error page from .cashing map
+        if (cashingConfig && cashingConfig[fileRes.status]) {
+          const errorPath = cashingConfig[fileRes.status];
+          const errorRes = await fetch(`${baseUrl}/${errorPath}`);
+          if (errorRes.ok) {
+            // Serve error page with original status code
+            const data = await errorRes.arrayBuffer();
+            const etag = await makeETag(data);
+            const ext = errorPath.split(".").pop().toLowerCase();
+            const mime = {
+              html: "text/html; charset=utf-8",
+              js: "text/javascript",
+              css: "text/css",
+              json: "application/json",
+              png: "image/png",
+              jpg: "image/jpeg",
+              jpeg: "image/jpeg",
+              svg: "image/svg+xml",
+              mp4: "video/mp4"
+            }[ext] || "application/octet-stream";
+
+            return new Response(data, {
+              status: fileRes.status,
+              headers: {
+                ...cors,
+                ...securityHeaders,
+                "Content-Type": mime,
+                "Cache-Control": "no-cache", // error pages shouldn't be cached long
+                "ETag": etag
+              }
+            });
+          }
+        }
+        // Otherwise return the original error
+        return new Response(fileRes.statusText, { status: fileRes.status });
+      }
+
+      // Success: return file with proper headers
+      const data = await fileRes.arrayBuffer();
       const etag = await makeETag(data);
+      const ext = filePath.split(".").pop().toLowerCase();
+      const mime = {
+        html: "text/html; charset=utf-8",
+        js: "text/javascript",
+        css: "text/css",
+        json: "application/json",
+        png: "image/png",
+        jpg: "image/jpeg",
+        jpeg: "image/jpeg",
+        svg: "image/svg+xml",
+        mp4: "video/mp4"
+      }[ext] || "application/octet-stream";
 
-      if (req.headers.get("If-None-Match") === etag) {
-        return new Response(null, { status: 304 });
+      // Determine cache rule (from .cashing or default)
+      let cacheRule = "no-cache";
+      if (cashingConfig && cashingConfig.cache) {
+        // If .cashing has a cache rule for extensions, use it
+        cacheRule = cashingConfig.cache[ext] || cashingConfig.cache.default || "no-cache";
+      } else {
+        cacheRule = ["js","css","png","jpg","jpeg","svg","mp4"].includes(ext) ? "1y" : "no-cache";
       }
 
       return new Response(data, {
+        status: 200,
         headers: {
           ...cors,
           ...securityHeaders,
-          "Content-Type": mime(ext),
-          "Cache-Control": cacheControl(await getCacheRule(ext)),
+          "Content-Type": mime,
+          "Cache-Control": cacheControl(cacheRule),
           "ETag": etag
         }
       });
     }
 
+    // ========== NORMAL MODE ==========
+    // Load .cashing config once
+    const cashingConfig = await loadConfig(user, ".cashing");
+
+    // Determine base directory (starting_dir)
+    let baseDir = "";
+    if (cashingConfig && cashingConfig.starting_dir) {
+      baseDir = `${cashingConfig.starting_dir}/`;
+    }
+
+    // Construct full KV key
+    const key = `${user}/${baseDir}${path}`;
+
+    try {
+      return await serveFile(key);
+    } catch (err) {
+      if (err instanceof FileNotFound) {
+        return fallback(404, cashingConfig);
+      }
+      return fallback(500, cashingConfig);
+    }
   }
 };
-
-function mime(ext) {
-  return {
-    html: "text/html; charset=utf-8",
-    js: "text/javascript",
-    css: "text/css",
-    json: "application/json",
-    png: "image/png",
-    jpg: "image/jpeg",
-    jpeg: "image/jpeg",
-    svg: "image/svg+xml",
-    mp4: "video/mp4"
-  }[ext] || "application/octet-stream";
-}
