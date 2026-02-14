@@ -103,40 +103,37 @@ export default {
   const cfg = JSON.parse(cfgRaw);
   const base = cfg.url.replace(/\/+$/, "");
 
-  // DO NOT FORCE .html FOR GITHUB
   let filePath = path || "";
+  if (filePath.endsWith("/")) filePath += "index.html";
 
-  // try loading .cashing
+  // try loading .cashing (optional)
   let cashing = null;
   try {
-    const r = await fetch(`${base}/.cashing`, { redirect: "follow" });
+    const r = await fetch(`${base}/.cashing`);
     if (r.ok) cashing = await r.json();
   } catch {}
 
-  // apply starting_dir (GitHub-style)
   if (cashing?.starting_dir) {
-    filePath = `${cashing.starting_dir.replace(/\/+$/, "")}/${filePath}`;
+    filePath = `${cashing.starting_dir}/${filePath}`;
   }
 
   const finalUrl = filePath
     ? `${base}/${filePath}`
     : `${base}/`;
 
-  const res = await fetch(finalUrl, {
-    redirect: "follow",
-    headers: { "User-Agent": "CodeMon-Worker" }
-  });
+  const res = await fetch(finalUrl, { redirect: "follow" });
 
+  // 🔑 IMPORTANT CHANGE
+  // Do NOT throw on empty body
   if (!res.ok) {
     if (cashing?.[res.status]) {
-      const fb = await fetch(`${base}/${cashing[res.status]}`);
-      if (fb.ok) return fb;
+      return fetch(`${base}/${cashing[res.status]}`);
     }
-    throw new FileNotFound();
+    return new Response("Not Found", { status: 404 });
   }
 
-  const data = await res.arrayBuffer();
-  const contentType = res.headers.get("content-type") || "application/octet-stream";
+  const data = await res.arrayBuffer(); // may be empty — OK
+  const ext = filePath.split(".").pop()?.toLowerCase() || "html";
   const etag = await makeETag(data);
 
   if (req.headers.get("If-None-Match") === etag) {
@@ -147,12 +144,13 @@ export default {
     headers: {
       ...cors,
       ...securityHeaders,
-      "Content-Type": contentType,
-      "Cache-Control": "no-cache",
+      "Content-Type": mime(ext),
+      "Cache-Control": cacheControl(ext),
       "ETag": etag
     }
   });
     }
+
     /* =========================
        FALLBACK
     ========================= */
