@@ -96,21 +96,17 @@ export default {
     /* =========================
        GITHUB MODE
     ========================= */
-    
-async function serveGitHub() {
+    async function serveGitHub() {
   const cfgRaw = await env.STORAGE.get(`website/git/${website}`, "text");
   if (!cfgRaw) throw new FileNotFound();
 
   const cfg = JSON.parse(cfgRaw);
   const base = cfg.url.replace(/\/+$/, "");
 
-  /* =========================
-     PATH NORMALIZATION (CRITICAL)
-  ========================= */
-  let filePath = path || "";
+  // ALWAYS normalize path
+  let filePath = path;
 
-  // 🔑 FORCE index.html
-  if (filePath === "" || filePath === "/") {
+  if (!filePath || filePath === "") {
     filePath = "index.html";
   }
 
@@ -122,36 +118,17 @@ async function serveGitHub() {
     filePath += ".html";
   }
 
-  /* =========================
-     LOAD .cashing (OPTIONAL)
-  ========================= */
-  let cashing = null;
-  try {
-    const r = await fetch(`${base}/.cashing`, { redirect: "follow" });
-    if (r.ok) cashing = await r.json();
-  } catch {}
-
-  if (cashing?.starting_dir) {
-    filePath = `${cashing.starting_dir.replace(/\/+$/, "")}/${filePath}`;
-  }
-
   const finalUrl = `${base}/${filePath}`;
 
-  /* =========================
-     FETCH FILE
-  ========================= */
   const res = await fetch(finalUrl, {
     redirect: "follow",
-    headers: { "User-Agent": "CodeMon-Worker" }
+    headers: {
+      "User-Agent": "Mozilla/5.0 CodeMon"
+    }
   });
 
   if (!res.ok) {
-    // optional fallback from .cashing
-    if (cashing?.[res.status]) {
-      const fb = await fetch(`${base}/${cashing[res.status]}`);
-      if (fb.ok) return fb;
-    }
-    throw new FileNotFound();
+    return new Response("Not Found", { status: 404 });
   }
 
   const data = await res.arrayBuffer();
@@ -171,7 +148,8 @@ async function serveGitHub() {
       "ETag": etag
     }
   });
-                                    }
+    }
+
     /* =========================
        FALLBACK
     ========================= */
