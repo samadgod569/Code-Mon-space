@@ -132,7 +132,7 @@ export default {
       const website = user.slice(2);
       let gitInfo;
       try {
-        const gitData = await env.STORAGE.get(`${website}/git/${website}`, "text");
+        const gitData = await env.STORAGE.get(`website/git/${website}`, "text");
         gitInfo = JSON.parse(gitData);
       } catch {
         return new Response("GitHub site not configured", { status: 404 });
