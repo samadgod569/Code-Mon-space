@@ -132,7 +132,7 @@ export default {
       const website = user.slice(2);
       let gitInfo;
       try {
-        const gitData = await env.STORAGE.get(`website/git/${website}`, "text");
+        const gitData = await env.STORAGE.get(`${website}/git/${website}`, "text");
         gitInfo = JSON.parse(gitData);
       } catch {
         return new Response("GitHub site not configured", { status: 404 });
@@ -142,34 +142,32 @@ export default {
       }
       const baseUrl = gitInfo.url.replace(/\/$/, "");
 
-      // Fetch .cashing from the GitHub repo
-      let cashingConfig = null;
-      try {
-        const cashingRes = await fetch(`${baseUrl}/.cashing`);
-        if (cashingRes.ok) {
-          cashingConfig = await cashingRes.json();
-        }
-      } catch {
-        // ignore
-      }
+      // Extract configuration from gitInfo
+      const startingDir = gitInfo.starting_dir || "";
+      const errorPages = {
+        404: gitInfo["404"],
+        500: gitInfo["500"]
+        // Add more status codes as needed
+      };
 
       // Determine actual file path with starting_dir
       let filePath = path;
-      if (cashingConfig && cashingConfig.starting_dir) {
+      if (startingDir) {
         // Avoid double prefix if path already contains starting_dir
-        if (!path.startsWith(cashingConfig.starting_dir + '/')) {
-          filePath = `${cashingConfig.starting_dir}/${path}`;
+        if (!path.startsWith(startingDir + '/')) {
+          filePath = `${startingDir}/${path}`;
         }
       }
 
       // Fetch the file from GitHub
       const fileRes = await fetch(`${baseUrl}/${filePath}`);
       if (!fileRes.ok) {
-        // Try custom error page from .cashing map (also apply starting_dir)
-        if (cashingConfig && cashingConfig[fileRes.status]) {
-          let errorPath = cashingConfig[fileRes.status];
-          if (cashingConfig.starting_dir && !errorPath.startsWith(cashingConfig.starting_dir + '/')) {
-            errorPath = `${cashingConfig.starting_dir}/${errorPath}`;
+        // Try custom error page from gitInfo map (also apply starting_dir)
+        const status = fileRes.status;
+        if (errorPages[status]) {
+          let errorPath = errorPages[status];
+          if (startingDir && !errorPath.startsWith(startingDir + '/')) {
+            errorPath = `${startingDir}/${errorPath}`;
           }
           const errorRes = await fetch(`${baseUrl}/${errorPath}`);
           if (errorRes.ok) {
@@ -189,7 +187,7 @@ export default {
             }[ext] || "application/octet-stream";
 
             return new Response(data, {
-              status: fileRes.status,
+              status: status,
               headers: {
                 ...cors,
                 ...securityHeaders,
@@ -219,12 +217,8 @@ export default {
         mp4: "video/mp4"
       }[ext] || "application/octet-stream";
 
-      let cacheRule = "no-cache";
-      if (cashingConfig && cashingConfig.cache) {
-        cacheRule = cashingConfig.cache[ext] || cashingConfig.cache.default || "no-cache";
-      } else {
-        cacheRule = ["js","css","png","jpg","jpeg","svg","mp4"].includes(ext) ? "1y" : "no-cache";
-      }
+      // Cache rule based on extension (default)
+      const cacheRule = ["js","css","png","jpg","jpeg","svg","mp4"].includes(ext) ? "1y" : "no-cache";
 
       return new Response(data, {
         status: 200,
