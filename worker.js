@@ -160,7 +160,7 @@ export default {
       }
 
       // Fetch the file from GitHub
-      const fileRes = await fetch(`${baseUrl}/${filePath}`);
+      const fileRes = await fetch(`${baseUrl}/${filePath}?nocash=1`);
       if (!fileRes.ok) {
         // Try custom error page from gitInfo map (also apply starting_dir)
         const status = fileRes.status;
